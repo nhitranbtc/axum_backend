@@ -1,211 +1,115 @@
 # Axum Backend - Production-Ready Rust Web Service
 
-A modern, scalable backend service built with Rust and Axum, following **Domain-Driven Design (DDD)** and **Clean Architecture** principles.
+> **A modern, scalable backend service built with Rust and Axum, following Domain-Driven Design (DDD) and Clean Architecture principles.**
+
+![Rust](https://img.shields.io/badge/rust-1.75%2B-orange) ![Axum](https://img.shields.io/badge/axum-0.7-blue) ![Diesel](https://img.shields.io/badge/diesel-2.1-green) ![Docker](https://img.shields.io/badge/docker-ready-blue)
 
 ## 🏗️ Architecture
 
-This project implements a **layered architecture** with clear separation of concerns:
+This project implements a **layered architecture** designed for maintainability and scalability.
 
-- **Domain Layer**: Pure business logic (framework-agnostic)
-- **Application Layer**: Use cases and business orchestration
-- **Infrastructure Layer**: Database, cache, external services
-- **Presentation Layer**: HTTP handlers, routing, middleware
+- **Domain Layer**: Pure business logic, entities, and value objects. Zero external dependencies.
+- **Application Layer**: Use cases, DTOs, and business orchestration.
+- **Infrastructure Layer**: Database repositories (Diesel), email services (Lettre), configuration.
+- **Presentation Layer**: HTTP REST API (Axum), routing, middleware, and documentation (Swagger).
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed documentation.
+📖 **[Read the Full Architecture Guide](docs/ARCHITECTURE.md)**
 
-## 📋 Features
-
-- ✅ **Clean Architecture**: Testable, maintainable, scalable
-- ✅ **Type-Safe Database**: SQLx with compile-time verification
-- ✅ **Async-First**: Tokio runtime for high performance
-- ✅ **Error Handling**: Comprehensive error types and handling
-- ✅ **Logging & Tracing**: Structured logging with tracing
-- ✅ **Authentication**: JWT-based auth (planned)
-- ✅ **Validation**: Input validation with validator
-- ✅ **Testing**: Unit, integration, and E2E tests
-- ✅ **Docker Ready**: Containerized deployment
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Rust 1.75+ (`rustup update`)
-- PostgreSQL 14+
-- Docker & Docker Compose (optional)
+- **Rust**: 1.75+ (`rustup update`)
+- **Docker**: For running the database and local development environment.
+- **Cargo Make** (Optional): For running workflows.
 
-### Setup
+### 🛠️ Setup & Run (The Easy Way)
 
-1. **Clone and navigate to the project**:
-   ```bash
-   cd /home/nhitran/RustApps/axum_backend
-   ```
+We provide a standalone script to bootstrap the entire environment (Database + App + Monitoring):
 
-2. **Copy environment configuration**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your database credentials
-   ```
+```bash
+./docker/backend/run_container.sh
+```
 
-3. **Install SQLx CLI** (for database migrations):
-   ```bash
-   cargo install sqlx-cli --no-default-features --features postgres
-   ```
+This will:
 
-4. **Create database**:
-   ```bash
-   createdb axum_db
-   # Or using psql:
-   # psql -U postgres -c "CREATE DATABASE axum_db;"
-   ```
+1. Start PostgreSQL (with `axum` user and `axum_backend` db).
+2. Run `cargo check` and `cargo fmt`.
+3. Build the release binary.
+4. Launch the application container on `host` network.
 
-5. **Run migrations**:
-   ```bash
-   sqlx migrate run
-   ```
+**Access Points:**
 
-6. **Build and run**:
-   ```bash
-   cargo run
-   ```
+- **API**: `http://localhost:3000`
+- **Swagger UI**: `http://localhost:3000/swagger-ui/`
+- **Example Endpoint**: `GET http://localhost:3000/api/health`
 
-The server will start at `http://127.0.0.1:3000`
+### 📦 Build & Development
+
+We use distinct Cargo profiles for different stages:
+
+| Profile     | Command                         | Use Case                                        |
+| ----------- | ------------------------------- | ----------------------------------------------- |
+| **Dev**     | `cargo run`                     | Fast compilation, full debug info.              |
+| **Staging** | `cargo build --profile staging` | Optimized but with debug symbols for profiling. |
+| **Release** | `cargo build --release`         | Max performance, LTO, stripped symbols.         |
+
+---
 
 ## 🧪 Testing
 
+We have a robust testing suite covering unit, integration, and flow tests.
+
 ```bash
 # Run all tests
-cargo test
+./tests/run_tests.sh all
 
-# Run with output
-cargo test -- --nocapture
-
-# Run specific test
-cargo test test_name
-
-# Run integration tests only
-cargo test --test '*'
+# Run specific category
+./tests/run_tests.sh authentication
+./tests/run_tests.sh users
 ```
+
+---
 
 ## 📁 Project Structure
 
 ```
 axum_backend/
 ├── src/
-│   ├── config/              # Configuration management
-│   ├── domain/              # Core business logic
-│   │   ├── entities/        # Domain entities
-│   │   ├── value_objects/   # Value objects
-│   │   ├── repositories/    # Repository traits
-│   │   └── errors/          # Domain errors
-│   ├── application/         # Use cases & orchestration
-│   │   ├── dto/             # Data Transfer Objects
-│   │   ├── services/        # Application services
-│   │   └── use_cases/       # Business use cases
-│   ├── infrastructure/      # External concerns
-│   │   ├── database/        # Database implementation
-│   │   ├── cache/           # Caching layer
-│   │   └── external_apis/   # Third-party APIs
-│   ├── presentation/        # HTTP layer
-│   │   ├── routes/          # Route definitions
-│   │   ├── handlers/        # HTTP handlers
-│   │   ├── middleware/      # Custom middleware
-│   │   └── responses/       # Response types
-│   └── shared/              # Shared utilities
-│       ├── errors/          # Application errors
-│       ├── utils/           # Helper functions
-│       └── telemetry/       # Logging & tracing
-├── migrations/              # Database migrations
-└── tests/                   # Integration tests
+│   ├── domain/             # Entities, Value Objects, Repository Traits
+│   ├── application/        # Use Cases, DTOs, Commands, Queries
+│   ├── infrastructure/     # Database (Diesel), Email, Config
+│   ├── presentation/       # Routes, Handlers, Middleware
+│   └── shared/             # Errors, Utils, Telemetry
+├── tests/                  # Integration tests
+├── migrations/             # Diesel SQL migrations
+├── docker/                 # Dockerfiles and scripts
+│   ├── backend/            # App container setup
+│   └── postgres-docker/    # DB container setup with init scripts
+├── docs/                   # Detailed documentation
+└── Cargo.toml              # Dependencies & Build Profiles
 ```
-
-## 🔧 Development
-
-### Database Migrations
-
-```bash
-# Create a new migration
-sqlx migrate add migration_name
-
-# Run migrations
-sqlx migrate run
-
-# Revert last migration
-sqlx migrate revert
-```
-
-### Code Quality
-
-```bash
-# Format code
-cargo fmt
-
-# Lint code
-cargo clippy
-
-# Check without building
-cargo check
-```
-
-## 🐳 Docker
-
-### Development
-
-```bash
-docker-compose up -d
-```
-
-### Production Build
-
-```bash
-docker build -t axum_backend .
-docker run -p 3000:3000 --env-file .env axum_backend
-```
-
-## 📚 API Documentation
-
-Once running, visit:
-- Health Check: `http://localhost:3000/health`
-- API Docs: `http://localhost:3000/docs` (planned)
-
-## 🛠️ Technology Stack
-
-- **Web Framework**: [Axum](https://github.com/tokio-rs/axum) 0.7
-- **Runtime**: [Tokio](https://tokio.rs/)
-- **Database**: PostgreSQL with [SQLx](https://github.com/launchbadge/sqlx)
-- **Serialization**: [Serde](https://serde.rs/)
-- **Validation**: [Validator](https://github.com/Keats/validator)
-- **Logging**: [Tracing](https://github.com/tokio-rs/tracing)
-- **Authentication**: [jsonwebtoken](https://github.com/Keats/jsonwebtoken)
-
-## 📖 Documentation
-
-- [Architecture Guide](./ARCHITECTURE.md) - Detailed architecture documentation
-- [Implementation Plan](./IMPLEMENTATION_PLAN.md) - Development roadmap
-
-## 🤝 Contributing
-
-1. Follow the architecture patterns defined in ARCHITECTURE.md
-2. Write tests for new features
-3. Run `cargo fmt` and `cargo clippy` before committing
-4. Update documentation as needed
-
-## 📝 License
-
-MIT License - see LICENSE file for details
-
-## 🎯 Roadmap
-
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the complete development roadmap.
-
-### Current Status: Phase 1 - Foundation Setup ✅
-
-### Next Steps:
-- [ ] Implement configuration module
-- [ ] Set up database connection
-- [ ] Create first domain entity (User)
-- [ ] Implement user CRUD operations
-- [ ] Add authentication
 
 ---
 
-**Built with ❤️ using Rust and Axum**
+## 🛠️ Technology Stack
+
+- **Core**: Rust, Tokio
+- **Web Framework**: Axum 0.7
+- **Database**: PostgreSQL 16, Diesel 2.1 (ORM & Migrations)
+- **Auth**: JWT (Access + Refresh Tokens), Argon2 hashing
+- **Observability**: Tracing, Prometheus Metrics
+- **Documentation**: Utoipa (OpenAPI/Swagger)
+- **Email**: Lettre (SMTP)
+
+## 🤝 Contributing
+
+1. **Follow the Architecture**: Keep logic in the correct layer.
+2. **Run Tests**: Ensure `./tests/run_tests.sh all` passes.
+3. **Format**: `cargo fmt` is enforced by the build pipeline.
+
+## 📝 License
+
+MIT License. See [LICENSE](LICENSE) for details.

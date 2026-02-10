@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Axum Backend</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f6f8;
+            margin: 0;
+            padding: 0;
+            color: #333333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            padding: 40px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px;
+            text-align: center;
+        }
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #111827;
+        }
+        .message {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            color: #4b5563;
+        }
+        .btn {
+            display: inline-block;
+            background-color: #10b981;
+            color: #ffffff;
+            font-weight: 600;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            transition: background-color 0.3s ease;
+        }
+        .btn:hover {
+            background-color: #059669;
+        }
+        .footer {
+            background-color: #f9fafb;
+            padding: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #9ca3af;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer a {
+            color: #10b981;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome Aboard!</h1>
+        </div>
+        <div class="content">
+            <p class="greeting">Hi {{ name }},</p>
+            <p class="message">
+                We are thrilled to have you with us! Your account has been successfully created and verified. You are now ready to explore all the features we have to offer.
+            </p>
+            <p class="message">
+                Get started by logging into your dashboard.
+            </p>
+            <a href="#" class="btn">Go to Dashboard</a>
+        </div>
+        <div class="footer">
+            &copy; 2026 Axum Backend. All rights reserved.<br>
+            <a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a>
+        </div>
+    </div>
+</body>
+</html>

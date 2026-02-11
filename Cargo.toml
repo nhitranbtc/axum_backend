@@ -108,12 +108,6 @@ serial_test = "3.0"
 testcontainers-modules = { version = "0.14.0", features = ["postgres"] }
 
 [[bench]]
-name = "api_benchmarks"
-path = "tests/benchmarks/api_benchmarks.rs"
-harness = false
-
-[[bench]]
-
-name = "database_benchmarks"
-path = "tests/benchmarks/database_benchmarks.rs"
+name = "backend_benchmarks"
+path = "tests/benchmarks/backend_benchmarks.rs"
 harness = false

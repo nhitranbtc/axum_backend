@@ -1,0 +1,56 @@
+# --- 🦀 Rust ---
+/target/
+**/*.rs.bk
+
+# --- 🔐 Environment & Secrets ---
+# Database strings, API keys, etc.
+.env
+.env.*
+!.env.example
+
+# --- 🛠️ IDE & Editors ---
+# JetBrains
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Vim/Emacs
+*~
+*.swp
+*.swo
+\#*#
+.#*
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# --- 🗄️ Database ---
+# Local database data (if using docker volumes mapped locally)
+postgres_data/
+mysql_data/
+redis_data/
+
+# SQLx offline data - typically we WANT to commit this
+# .sqlx/
+
+# --- 📊 Logs & Reports ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/test-reports/
+/coverage/
+/lcov-report/
+
+# --- 📦 Miscellaneous ---
+# Example: Temporary files
+tmp/
+dist/
+build/

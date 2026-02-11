@@ -1,0 +1,48 @@
+# --- 🦀 Rust ---
+target/
+**/*.rs.bk
+
+# --- 🔐 Secrets & Environment ---
+.env
+.env.*
+!.env.example
+
+# --- 🛠️ VCS & IDE ---
+.git/
+.gitignore
+.dockerignore
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# --- 🐳 Docker Metadata ---
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+docker/
+
+# --- 📚 Documentation ---
+README.md
+LICENSE
+docs/
+*.md
+
+# --- 🧪 Tests & Scripts ---
+# Exclude integration tests and detailed reports from the build context
+tests/
+test-reports/
+scripts/
+examples/
+
+# --- 📊 Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# --- 📦 Miscellaneous ---
+tmp/
+dist/
+build/
+node_modules/

@@ -1,0 +1,84 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: docker/backend/Dockerfile
+    image: axum_backend:latest
+    # Explicit container name to avoid conflict with standalone run_container.sh
+    container_name: axum_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=info
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=3000
+      # Connect to the postgres service, not localhost
+      - DATABASE_URL=postgres://axum:axum123@postgres:5432/axum_backend
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_key_change_in_prod}
+      # Database Pool Config
+      - DB_MAX_CONNECTIONS=20
+      - DB_MIN_CONNECTIONS=2
+      - DB_CONNECT_TIMEOUT_SECS=30
+      - DB_IDLE_TIMEOUT_SECS=600
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - axum_net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: axum_db
+    restart: always
+    environment:
+      POSTGRES_USER: axum
+      POSTGRES_PASSWORD: axum123
+      POSTGRES_DB: axum_backend
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axum -d axum_backend"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - axum_net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: axum_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - axum_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: axum_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - axum_net
+
+networks:
+  axum_net:
+    driver: bridge
+
+volumes:
+  postgres_data:

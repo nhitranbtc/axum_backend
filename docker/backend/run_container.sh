@@ -66,7 +66,7 @@ echo "============================================="
 cleanup_container $DB_CONTAINER_NAME
 
 log_info "Building Database Image..."
-docker build -t $DB_IMAGE_NAME -f docker/postgres-docker/Dockerfile docker/postgres-docker
+docker build -t $DB_IMAGE_NAME -f docker/postgres/Dockerfile docker/postgres
 
 log_info "Starting Database Container..."
 if docker run -d \

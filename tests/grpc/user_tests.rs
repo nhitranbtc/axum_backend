@@ -28,20 +28,26 @@ async fn test_create_user_duplicate_email() {
     let mut client = server.client().await;
 
     // Create first user
-    client.create_user(tonic::Request::new(CreateUserRequest {
-        email: "duplicate@example.com".to_string(),
-        name: "User 1".to_string(),
-        password: "password123".to_string(),
-        role: None,
-    })).await.expect("First create failed");
+    client
+        .create_user(tonic::Request::new(CreateUserRequest {
+            email: "duplicate@example.com".to_string(),
+            name: "User 1".to_string(),
+            password: "password123".to_string(),
+            role: None,
+        }))
+        .await
+        .expect("First create failed");
 
     // Create second user with same email
-    let err = client.create_user(tonic::Request::new(CreateUserRequest {
-        email: "duplicate@example.com".to_string(),
-        name: "User 2".to_string(),
-        password: "password123".to_string(),
-        role: None,
-    })).await.unwrap_err();
+    let err = client
+        .create_user(tonic::Request::new(CreateUserRequest {
+            email: "duplicate@example.com".to_string(),
+            name: "User 2".to_string(),
+            password: "password123".to_string(),
+            role: None,
+        }))
+        .await
+        .unwrap_err();
 
     assert_eq!(err.code(), Code::AlreadyExists);
 }
@@ -52,17 +58,23 @@ async fn test_get_user_success() {
     let mut client = server.client().await;
 
     // Create user
-    let user = client.create_user(tonic::Request::new(CreateUserRequest {
-        email: "get_user@example.com".to_string(),
-        name: "Get User".to_string(),
-        password: "password123".to_string(),
-        role: None,
-    })).await.unwrap().into_inner();
+    let user = client
+        .create_user(tonic::Request::new(CreateUserRequest {
+            email: "get_user@example.com".to_string(),
+            name: "Get User".to_string(),
+            password: "password123".to_string(),
+            role: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
 
     // Get user
-    let fetched = client.get_user(tonic::Request::new(GetUserRequest {
-        user_id: user.id.clone(),
-    })).await.unwrap().into_inner();
+    let fetched = client
+        .get_user(tonic::Request::new(GetUserRequest { user_id: user.id.clone() }))
+        .await
+        .unwrap()
+        .into_inner();
 
     assert_eq!(fetched.id, user.id);
     assert_eq!(fetched.email, user.email);
@@ -73,9 +85,12 @@ async fn test_get_user_not_found() {
     let server = TestGrpcServer::new().await;
     let mut client = server.client().await;
 
-    let err = client.get_user(tonic::Request::new(GetUserRequest {
-        user_id: "00000000-0000-0000-0000-000000000000".to_string(),
-    })).await.unwrap_err();
+    let err = client
+        .get_user(tonic::Request::new(GetUserRequest {
+            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
+        }))
+        .await
+        .unwrap_err();
 
     assert_eq!(err.code(), Code::NotFound);
 }
@@ -85,9 +100,10 @@ async fn test_invalid_uuid() {
     let server = TestGrpcServer::new().await;
     let mut client = server.client().await;
 
-    let err = client.get_user(tonic::Request::new(GetUserRequest {
-        user_id: "invalid-uuid".to_string(),
-    })).await.unwrap_err();
+    let err = client
+        .get_user(tonic::Request::new(GetUserRequest { user_id: "invalid-uuid".to_string() }))
+        .await
+        .unwrap_err();
 
     assert_eq!(err.code(), Code::InvalidArgument);
 }

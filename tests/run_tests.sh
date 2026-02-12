@@ -395,6 +395,7 @@ show_help() {
     echo "  health      - Run health check"
     echo "  stress      - Run stress/performance tests"
     echo "  bench       - Run benchmarks"
+    echo "  redis       - Run Redis integration tests"
     echo "  all         - Run all tests (default if no argument)"
     echo "  help        - Show this help message"
     echo ""
@@ -516,6 +517,14 @@ main() {
                 false || all_passed=false
             ;;
         
+        "redis")
+            echo -e "${CYAN}${BOLD}🧠 Running Redis integration tests...${NC}\n"
+            run_test_suite \
+                "Redis Integration Tests" \
+                "cargo test --test redis_tests -- --nocapture" \
+                true || all_passed=false
+            ;;
+        
         "all")
             echo -e "${CYAN}${BOLD}🎯 Running complete test suite...${NC}\n"
             
@@ -532,6 +541,11 @@ main() {
             run_test_suite \
                 "Load/Stress Tests" \
                 "cargo test --test load_tests -- --nocapture" \
+                true || all_passed=false
+
+            run_test_suite \
+                "Redis Integration Tests" \
+                "cargo test --test redis_tests -- --nocapture" \
                 true || all_passed=false
             ;;
         

@@ -1,3 +1,4 @@
+use crate::infrastructure::cache::CacheRepository;
 use crate::{
     application::dto::UpdateUserDto,
     domain::{
@@ -10,13 +11,14 @@ use uuid::Uuid;
 use validator::Validate;
 
 /// Use case for updating a user
-pub struct UpdateUserUseCase<R: UserRepository> {
+pub struct UpdateUserUseCase<R: UserRepository, C: CacheRepository + ?Sized> {
     user_repository: Arc<R>,
+    cache_repository: Arc<C>,
 }
 
-impl<R: UserRepository> UpdateUserUseCase<R> {
-    pub fn new(user_repository: Arc<R>) -> Self {
-        Self { user_repository }
+impl<R: UserRepository, C: CacheRepository + ?Sized> UpdateUserUseCase<R, C> {
+    pub fn new(user_repository: Arc<R>, cache_repository: Arc<C>) -> Self {
+        Self { user_repository, cache_repository }
     }
 
     pub async fn execute(&self, user_id: &str, dto: UpdateUserDto) -> Result<User, AppError> {
@@ -43,6 +45,14 @@ impl<R: UserRepository> UpdateUserUseCase<R> {
 
         // Save updated user
         let updated_user = self.user_repository.save(&user).await?;
+
+        // Invalidate cache
+        let cache_key = format!("user:{}", user_id);
+        if let Err(e) = self.cache_repository.delete(&cache_key).await {
+            tracing::warn!("Failed to invalidate cache for user {}: {}", user_id, e);
+        } else {
+            tracing::debug!("Invalidated cache for user {}", user_id);
+        }
 
         tracing::info!("User updated successfully: {}", updated_user.id);
 

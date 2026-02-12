@@ -95,12 +95,7 @@ impl PerformanceMetrics {
         writeln!(file, "status,user_id,latency_ms")?;
 
         for (i, latency) in self.latencies.iter().enumerate() {
-            writeln!(
-                file,
-                "SUCCESS,{},{}",
-                i,
-                latency.as_millis()
-            )?;
+            writeln!(file, "SUCCESS,{},{}", i, latency.as_millis())?;
         }
 
         // Add failed requests (no latency data)
@@ -125,12 +120,7 @@ impl PerformanceMetrics {
         writeln!(file, "Results:")?;
         writeln!(file, "--------")?;
         writeln!(file, "Total Requests: {}", self.total_requests)?;
-        writeln!(
-            file,
-            "Successful: {} ({:.1}%)",
-            self.successful_requests,
-            self.success_rate()
-        )?;
+        writeln!(file, "Successful: {} ({:.1}%)", self.successful_requests, self.success_rate())?;
         writeln!(file, "Failed: {}", self.failed_requests)?;
         writeln!(file, "Duration: {}s", self.total_duration.as_secs())?;
         writeln!(file, "Throughput: {:.2} req/s", self.throughput())?;
@@ -190,11 +180,7 @@ impl PerformanceMetrics {
         println!("╚════════════════════════════════════════════════════════╝\n");
 
         println!("📊 Summary:");
-        println!(
-            "   ✅ Successful: {} ({:.1}%)",
-            self.successful_requests,
-            self.success_rate()
-        );
+        println!("   ✅ Successful: {} ({:.1}%)", self.successful_requests, self.success_rate());
         println!("   ❌ Failed: {}", self.failed_requests);
         println!("   ⏱️  Duration: {}s", self.total_duration.as_secs());
         println!("   🚀 Throughput: {:.2} req/s", self.throughput());
@@ -223,7 +209,7 @@ impl PerformanceMetrics {
         }
 
         println!("🎯 Performance Targets:");
-        
+
         // Success rate target: >= 95%
         if self.success_rate() >= 95.0 {
             println!("   Success Rate: ✅ PASS");
@@ -256,15 +242,11 @@ async fn run_stress_test(
     test_name: &str,
 ) -> PerformanceMetrics {
     // Generate test ID from timestamp
-    let test_id = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        .to_string();
+    let test_id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs().to_string();
 
     // Create results directory
-    let results_dir = PathBuf::from("/tmp/grpc-stress-test")
-        .join(format!("{}_{}", test_name, test_id));
+    let results_dir =
+        PathBuf::from("/tmp/grpc-stress-test").join(format!("{}_{}", test_name, test_id));
     std::fs::create_dir_all(&results_dir).expect("Failed to create results directory");
 
     println!("\n╔════════════════════════════════════════════════════════╗");
@@ -324,16 +306,16 @@ async fn run_stress_test(
                                 metrics.successful_requests, num_users
                             );
                         }
-                    }
+                    },
                     Err(e) => {
                         metrics.failed_requests += 1;
                         eprintln!("❌ Failed to create user {}: {:?}", user_id, e);
-                    }
+                    },
                 },
                 Err(e) => {
                     metrics.failed_requests += 1;
                     eprintln!("❌ Task join error: {:?}", e);
-                }
+                },
             }
         }
     }
@@ -341,12 +323,8 @@ async fn run_stress_test(
     metrics.total_duration = start_time.elapsed();
 
     // Export results
-    metrics
-        .export_csv(&results_dir)
-        .expect("Failed to export CSV");
-    metrics
-        .generate_summary(&results_dir)
-        .expect("Failed to generate summary");
+    metrics.export_csv(&results_dir).expect("Failed to export CSV");
+    metrics.generate_summary(&results_dir).expect("Failed to generate summary");
 
     // Print results
     metrics.print_results();

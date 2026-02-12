@@ -10,7 +10,7 @@ This project implements a **layered architecture** designed for maintainability 
 
 - **Domain Layer**: Pure business logic, entities, and value objects. Zero external dependencies.
 - **Application Layer**: Use cases, DTOs, and business orchestration.
-- **Infrastructure Layer**: Database repositories (Diesel), email services (Lettre), configuration.
+- **Infrastructure Layer**: Database repositories (Diesel), email services (Lettre), Redis caching, configuration.
 - **Presentation Layer**: HTTP REST API (Axum), routing, middleware, and documentation (Swagger).
 
 📖 **[Read the Full Architecture Guide](docs/ARCHITECTURE.md)**
@@ -29,7 +29,7 @@ This project implements a **layered architecture** designed for maintainability 
 
 #### Option 1: Docker (Recommended)
 
-Bootstrap the entire environment (Database + App + Monitoring):
+Bootstrap the entire environment (Database + Redis + App + Monitoring):
 
 ```bash
 ./docker/backend/run_container.sh
@@ -135,9 +135,13 @@ grpcurl -plaintext -d '{
 # Run specific category
 ./tests/run_tests.sh authentication
 ./tests/run_tests.sh users
+./tests/run_tests.sh redis
 
 # Run gRPC tests
 cargo test --test grpc_tests
+
+# Run Redis tests directly
+cargo test --test redis_tests
 ```
 
 ### Stress Testing
@@ -166,14 +170,35 @@ cargo test --test grpc_tests stress -- --ignored --nocapture
 
 ---
 
+## ⚡ Redis Caching & Distributed Systems
+
+The project leverages Redis for high performance and data consistency:
+
+### Key Features
+
+1. **Caching (Cache-Aside Pattern)**:
+   - Optimizes read-heavy operations (e.g., `GetUser`, `ListUsers`).
+   - Automatic cache invalidation on write operations (`UpdateUser`, `DeleteUser`).
+
+2. **Distributed Locking**:
+   - Ensures mutual exclusion for critical sections (e.g., User Registration).
+   - Prevents race conditions in a distributed environment.
+
+3. **Rate Limiting**:
+   - Protects APIs from abuse using Sliding Window algorithm.
+
+📖 **[Full Redis Implementation Guide](docs/REDIS_GUIDE.md)**
+
+---
+
 ## 📁 Project Structure
 
-```
+```text
 axum_backend/
 ├── src/
 │   ├── domain/             # Entities, Value Objects, Repository Traits
 │   ├── application/        # Use Cases, DTOs, Commands, Queries
-│   ├── infrastructure/     # Database (Diesel), Email, Config
+│   ├── infrastructure/     # Database (Diesel), Email, Cache (Redis), Config
 │   ├── presentation/       # REST API Routes, Handlers, Middleware
 │   ├── grpc/               # gRPC Services, Handlers, Proto implementations
 │   ├── bin/                # Binary executables (grpc_server, grpc_client)
@@ -186,7 +211,10 @@ axum_backend/
 ├── scripts/                # Utility scripts (stress tests, cleanup)
 ├── tests/                  # Integration and stress tests
 │   ├── grpc/               # gRPC integration tests
-│   └── rest/               # REST API tests
+│   ├── rest/               # REST API tests
+│   ├── redis/              # Redis modular tests (cache, locking)
+│   ├── redis_tests.rs      # Redis test entry point
+│   └── grpc_tests.rs       # gRPC test entry point
 ├── migrations/             # Diesel SQL migrations
 ├── templates/              # Email templates (Handlebars)
 ├── docker/                 # Dockerfiles and deployment scripts
@@ -217,6 +245,7 @@ axum_backend/
 - **Database**: PostgreSQL 16
 - **ORM**: Diesel 2.1
 - **Migrations**: Diesel CLI
+- **Caching**: Redis 7.2 (Cache-Aside, Distributed Locking)
 
 ### Authentication & Security
 
@@ -248,7 +277,7 @@ axum_backend/
 
 Professional-grade load testing using **Goose** (Rust-based framework).
 
-### Quick Start
+### Goose Quick Start
 
 ```bash
 # Smoke test (5 users, 5 seconds)
@@ -263,7 +292,7 @@ cargo run --example grpc_load_test -- \
   --report-file stress_test.html
 ```
 
-### Key Features
+### Goose Key Features
 
 - ✅ Gradual ramp-up with configurable spawn rates
 - ✅ Real-time metrics (P50, P95, P99 latencies)

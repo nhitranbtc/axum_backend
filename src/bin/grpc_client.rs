@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let password = "SecurePassword123!";
 
     info!("📤 Creating user with email: {}", email);
-    
+
     create_and_print_user(&mut client, &email, name, password).await;
 
     Ok(())
@@ -60,6 +60,6 @@ async fn create_and_print_user(
         },
         Err(status) => {
             warn!("❌ gRPC Error: {}", status.message());
-        }
+        },
     }
 }

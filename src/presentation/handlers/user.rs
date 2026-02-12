@@ -1,12 +1,14 @@
 use crate::{
     application::{
         dto::{CreateUserDto, UpdateUserDto, UserResponseDto},
+        use_cases::user::DeleteUserUseCase,
         use_cases::{
             CreateUserUseCase, GetUserUseCase, ImportUsersUseCase, ListUsersUseCase,
             UpdateUserUseCase,
         },
     },
     domain::repositories::{user_repository::UserRepository, AuthRepository},
+    infrastructure::cache::CacheRepository,
     presentation::responses::ApiResponse,
     shared::AppError,
 };
@@ -81,8 +83,8 @@ fn default_page_size() -> i64 {
         ("jwt_token" = [])
     )
 )]
-pub async fn create_user<R: UserRepository>(
-    State(use_case): State<Arc<CreateUserUseCase<R>>>,
+pub async fn create_user<R: UserRepository, C: CacheRepository + ?Sized>(
+    State(use_case): State<Arc<CreateUserUseCase<R, C>>>,
     Json(payload): Json<CreateUserDto>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = use_case.execute(payload).await?;
@@ -107,8 +109,8 @@ pub async fn create_user<R: UserRepository>(
         ("jwt_token" = [])
     )
 )]
-pub async fn get_user<R: UserRepository>(
-    State(use_case): State<Arc<GetUserUseCase<R>>>,
+pub async fn get_user<R: UserRepository, C: CacheRepository + ?Sized>(
+    State(use_case): State<Arc<GetUserUseCase<R, C>>>,
     Path(user_id): Path<String>,
 ) -> Result<Json<ApiResponse<UserResponseDto>>, AppError> {
     let user = use_case.execute(&user_id).await?;
@@ -132,8 +134,8 @@ pub async fn get_user<R: UserRepository>(
         ("jwt_token" = [])
     )
 )]
-pub async fn list_users<R: UserRepository>(
-    State(use_case): State<Arc<ListUsersUseCase<R>>>,
+pub async fn list_users<R: UserRepository, C: CacheRepository + ?Sized>(
+    State(use_case): State<Arc<ListUsersUseCase<R, C>>>,
     Query(params): Query<ListUsersQuery>,
 ) -> Result<Json<ApiResponse<Vec<UserResponseDto>>>, AppError> {
     let users = use_case.execute(params.page, params.page_size).await?;
@@ -159,8 +161,8 @@ pub async fn list_users<R: UserRepository>(
         ("jwt_token" = [])
     )
 )]
-pub async fn update_user<R: UserRepository>(
-    State(use_case): State<Arc<UpdateUserUseCase<R>>>,
+pub async fn update_user<R: UserRepository, C: CacheRepository + ?Sized>(
+    State(use_case): State<Arc<UpdateUserUseCase<R, C>>>,
     Path(user_id): Path<String>,
     Json(payload): Json<UpdateUserDto>,
 ) -> Result<Json<ApiResponse<UserResponseDto>>, AppError> {
@@ -168,4 +170,29 @@ pub async fn update_user<R: UserRepository>(
     let response = UserResponseDto::from(user);
 
     Ok(Json(ApiResponse::success(response)))
+}
+
+/// Delete user
+#[utoipa::path(
+    delete,
+    path = "/api/users/{id}",
+    responses(
+        (status = 200, description = "User deleted successfully", body = StringResponseWrapper),
+        (status = 404, description = "User not found", body = ErrorResponseWrapper)
+    ),
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    tag = "users",
+    security(
+        ("jwt_token" = [])
+    )
+)]
+pub async fn delete_user<R: UserRepository, C: CacheRepository + ?Sized>(
+    State(use_case): State<Arc<DeleteUserUseCase<R, C>>>,
+    Path(user_id): Path<String>,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    use_case.execute(&user_id).await?;
+
+    Ok(Json(ApiResponse::success("User deleted successfully".to_string())))
 }

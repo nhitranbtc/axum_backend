@@ -39,7 +39,7 @@ async fn create_user_transaction(user: &mut GooseUser) -> TransactionResult {
             eprintln!("❌ Failed to connect to gRPC server {}: {}", grpc_endpoint, e);
             // Just return Ok - Goose will track this as a failed transaction
             return Ok(());
-        }
+        },
     };
 
     // Create request
@@ -56,9 +56,9 @@ async fn create_user_transaction(user: &mut GooseUser) -> TransactionResult {
     match client.create_user(grpc_request).await {
         Ok(response) => {
             let elapsed = started.elapsed();
-            
+
             let user_response = response.into_inner();
-            
+
             // Log occasionally to show progress (every 10th request)
             if user.weighted_users_index % 10 == 0 {
                 println!(
@@ -68,10 +68,10 @@ async fn create_user_transaction(user: &mut GooseUser) -> TransactionResult {
                     elapsed.as_millis()
                 );
             }
-        }
+        },
         Err(e) => {
             eprintln!("❌ CreateUser failed for {}: {}", email, e);
-        }
+        },
     }
 
     Ok(())
@@ -80,10 +80,7 @@ async fn create_user_transaction(user: &mut GooseUser) -> TransactionResult {
 /// Scenario: User registration load test
 fn user_registration_scenario() -> Scenario {
     scenario!("UserRegistration")
-        .register_transaction(
-            transaction!(create_user_transaction)
-                .set_name("CreateUser")
-        )
+        .register_transaction(transaction!(create_user_transaction).set_name("CreateUser"))
 }
 
 #[tokio::main]

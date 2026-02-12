@@ -51,6 +51,7 @@ use utoipa_swagger_ui::SwaggerUi;
         crate::presentation::handlers::user::get_user,
         crate::presentation::handlers::user::list_users,
         crate::presentation::handlers::user::update_user,
+        crate::presentation::handlers::user::delete_user,
         crate::presentation::handlers::user::import_users,
         crate::presentation::handlers::role::get_user_role,
         crate::presentation::handlers::role::update_user_role,
@@ -124,9 +125,11 @@ pub fn create_router(
     prometheus_layer: PrometheusMetricLayer<'static>,
     metric_handle: PrometheusHandle,
     email_service: Arc<dyn crate::application::services::email::EmailService>,
+    cache_repository: Arc<dyn crate::infrastructure::cache::CacheRepository>,
 ) -> Router {
     // Create repositories
     let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()));
+    // let user_repo = Arc::new(UserRepositoryImpl::new(pool.clone()));
 
     // Create JWT manager
     let jwt_manager = Arc::new(JwtManager::new(
@@ -141,6 +144,7 @@ pub fn create_router(
     let register_uc = Arc::new(RegisterUseCase::new(
         auth_repo.clone(),
         email_service.clone(),
+        cache_repository.clone(),
         confirm_code_expiry,
     ));
     let login_uc = Arc::new(LoginUseCase::new(auth_repo.clone(), jwt_manager.clone()));
@@ -181,7 +185,7 @@ pub fn create_router(
                 jwt_manager.clone(),
             ),
         )
-        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager))
+        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager, cache_repository))
         .layer(prometheus_layer)
         .layer(Extension(system_monitor))
 }

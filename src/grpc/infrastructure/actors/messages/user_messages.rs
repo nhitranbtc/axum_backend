@@ -10,12 +10,12 @@ pub enum UserServiceMessage {
     GetUser { user_id: String, reply: RpcReplyPort<Result<UserResponse, Status>> },
 
     /// Create new user
-    CreateUser { 
+    CreateUser {
         email: String,
         name: String,
         password: String,
         role: Option<String>,
-        reply: RpcReplyPort<Result<UserResponse, Status>> 
+        reply: RpcReplyPort<Result<UserResponse, Status>>,
     },
 
     /// Health check

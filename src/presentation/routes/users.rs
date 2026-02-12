@@ -4,6 +4,7 @@ use crate::{
         CreateUserUseCase, GetUserRoleUseCase, GetUserUseCase, ImportUsersUseCase,
         ListUsersUseCase, UpdateUserRoleUseCase, UpdateUserUseCase,
     },
+    infrastructure::cache::CacheRepository,
     infrastructure::database::repositories::{AuthRepositoryImpl, UserRepositoryImpl},
     infrastructure::database::DbPool,
     presentation::{
@@ -24,15 +25,23 @@ pub fn user_routes(
     pool: DbPool,
     auth_repo: Arc<AuthRepositoryImpl>,
     jwt_manager: Arc<JwtManager>,
+    cache_repository: Arc<dyn CacheRepository>,
 ) -> Router {
     // Create repository
     let user_repo = Arc::new(UserRepositoryImpl::new(pool));
 
     // Create use cases
-    let create_user_uc = Arc::new(CreateUserUseCase::new(user_repo.clone()));
-    let get_user_uc = Arc::new(GetUserUseCase::new(user_repo.clone()));
-    let list_users_uc = Arc::new(ListUsersUseCase::new(user_repo.clone()));
-    let update_user_uc = Arc::new(UpdateUserUseCase::new(user_repo.clone()));
+    let create_user_uc =
+        Arc::new(CreateUserUseCase::new(user_repo.clone(), cache_repository.clone()));
+    let get_user_uc = Arc::new(GetUserUseCase::new(user_repo.clone(), cache_repository.clone()));
+    let list_users_uc =
+        Arc::new(ListUsersUseCase::new(user_repo.clone(), cache_repository.clone()));
+    let update_user_uc =
+        Arc::new(UpdateUserUseCase::new(user_repo.clone(), cache_repository.clone()));
+    let delete_user_uc = Arc::new(crate::application::use_cases::DeleteUserUseCase::new(
+        user_repo.clone(),
+        cache_repository.clone(),
+    ));
     let import_users_uc = Arc::new(ImportUsersUseCase::new(auth_repo.clone()));
 
     // Role management use cases
@@ -48,6 +57,11 @@ pub fn user_routes(
         .route("/import", post(import_users).with_state(import_users_uc))
         .route("/:id", get(get_user).with_state(get_user_uc))
         .route("/:id", put(update_user).with_state(update_user_uc))
+        .route(
+            "/:id",
+            axum::routing::delete(crate::presentation::handlers::user::delete_user)
+                .with_state(delete_user_uc),
+        )
         // Role management endpoints
         .route("/:id/role", get(get_user_role).with_state(get_role_uc))
         .route("/:id/role", put(update_user_role).with_state(update_role_uc))

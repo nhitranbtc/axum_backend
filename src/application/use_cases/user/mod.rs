@@ -3,6 +3,7 @@
 /// Use cases orchestrate business logic for user-related operations.
 /// Each use case represents a single business operation.
 pub mod create;
+pub mod delete;
 pub mod get;
 pub mod import;
 pub mod list;
@@ -11,6 +12,7 @@ pub mod update;
 
 // Re-export use case types
 pub use create::CreateUserUseCase;
+pub use delete::DeleteUserUseCase;
 pub use get::GetUserUseCase;
 pub use import::ImportUsersUseCase;
 pub use list::ListUsersUseCase;

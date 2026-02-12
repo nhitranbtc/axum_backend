@@ -12,7 +12,7 @@ pub mod user;
 
 // Re-export handler functions for convenience
 pub use role::{get_user_role, update_user_role};
-pub use user::{create_user, get_user, import_users, list_users, update_user};
+pub use user::{create_user, delete_user, get_user, import_users, list_users, update_user};
 
 // Backward compatibility (deprecated)
 #[deprecated(since = "0.3.0", note = "Use `auth` module instead")]

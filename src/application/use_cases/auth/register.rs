@@ -7,9 +7,10 @@ use crate::{
         repositories::{AuthRepository, AuthRepositoryError},
         value_objects::Email,
     },
+    infrastructure::cache::{CacheRepository, DistributedLock},
 };
-use std::sync::Arc;
-use tracing::error;
+use std::{sync::Arc, time::Duration};
+use tracing::{error, info};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegisterError {
@@ -30,21 +31,29 @@ pub enum RegisterError {
 
     #[error("Failed to send email: {0}")]
     EmailError(String),
+
+    #[error("Concurrent registration attempt")]
+    ConcurrentRegistration,
+
+    #[error("Lock error: {0}")]
+    LockError(String),
 }
 
-pub struct RegisterUseCase<R: AuthRepository> {
+pub struct RegisterUseCase<R: AuthRepository, C: CacheRepository + ?Sized> {
     auth_repo: Arc<R>,
     email_service: Arc<dyn EmailService>,
+    cache_repository: Arc<C>,
     confirm_code_expiry: i64,
 }
 
-impl<R: AuthRepository> RegisterUseCase<R> {
+impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
     pub fn new(
         auth_repo: Arc<R>,
         email_service: Arc<dyn EmailService>,
+        cache_repository: Arc<C>,
         confirm_code_expiry: i64,
     ) -> Self {
-        Self { auth_repo, email_service, confirm_code_expiry }
+        Self { auth_repo, email_service, cache_repository, confirm_code_expiry }
     }
 
     pub async fn execute(
@@ -52,21 +61,23 @@ impl<R: AuthRepository> RegisterUseCase<R> {
         email: String,
         name: String,
     ) -> Result<RegisterResponse, RegisterError> {
-        // Return type might change to simple check?
-        // Instructions: "user call register api, in this api, we need send confirm code"
-        // It doesn't say we log them in. Usually we return "check your email".
-        // BUT existing signature returns AuthResponse.
-        // I will change it to return just a message or empty struct,
-        // OR I can return AuthResponse with empty tokens if the frontend expects it?
-        // No, frontend should expect a different flow.
-        // However, to keep modifications minimal on unrelated files (like maybe router expects a type),
-        // I should check `src/presentation/routes/auth.rs` later.
-        // For now, I'll return a special AuthResponse or change the return type.
-        // Let's change return type to Result<(), RegisterError> or Result<String, RegisterError>.
-        // But `AuthResponse` is defined in DTO.
-
         // Validate email format
         let email_vo = Email::parse(&email).map_err(|_| RegisterError::InvalidEmail)?;
+
+        // Distributed Lock to prevent concurrent registration
+        let lock_key = format!("lock:register:{}", email_vo.as_str());
+        let lock_value = uuid::Uuid::new_v4().to_string();
+        let lock_ttl = Duration::from_secs(10); // Hold lock for 10 seconds max
+
+        let lock =
+            DistributedLock::new(self.cache_repository.clone(), lock_key, lock_value, lock_ttl);
+
+        if !lock.acquire().await.map_err(|e| RegisterError::LockError(e.to_string()))? {
+            return Err(RegisterError::ConcurrentRegistration);
+        }
+
+        // Use a closure or explicit release to ensure lock is released (RAII not fully implemented for async)
+        // We will manually release at end.
 
         // Check if user already exists
         if (self
@@ -76,12 +87,11 @@ impl<R: AuthRepository> RegisterUseCase<R> {
             .map_err(|e| RegisterError::RepositoryError(e.to_string()))?)
         .is_some()
         {
+            let _ = lock.release().await; // Release lock before returning
             return Err(RegisterError::EmailAlreadyExists);
         }
 
         // Generate Confirmation Code
-        // Simple 6-digit code
-        // In production use a proper CSPRNG.
         use rand::Rng;
         let confirmation_code: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Uniform::new(0, 10))
@@ -92,7 +102,7 @@ impl<R: AuthRepository> RegisterUseCase<R> {
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(self.confirm_code_expiry);
 
         // Create user (inactive, no password)
-        let user = self
+        let user_result = self
             .auth_repo
             .create_user(
                 email_vo.as_str(),
@@ -101,11 +111,18 @@ impl<R: AuthRepository> RegisterUseCase<R> {
                 Some(confirmation_code.clone()),
                 Some(expires_at),
             )
-            .await
-            .map_err(|e| match e {
-                AuthRepositoryError::EmailAlreadyExists => RegisterError::EmailAlreadyExists,
-                _ => RegisterError::RepositoryError(e.to_string()),
-            })?;
+            .await;
+
+        let user = match user_result {
+            Ok(u) => u,
+            Err(e) => {
+                let _ = lock.release().await;
+                return Err(match e {
+                    AuthRepositoryError::EmailAlreadyExists => RegisterError::EmailAlreadyExists,
+                    _ => RegisterError::RepositoryError(e.to_string()),
+                });
+            },
+        };
 
         // Send confirmation email
         let recipient = Recipient { email: email_vo.as_str().to_string(), name: user.name.clone() };
@@ -116,8 +133,14 @@ impl<R: AuthRepository> RegisterUseCase<R> {
             .await
         {
             error!("Failed to send confirmation email: {}", e);
-            // We return error so client knows retry is needed
+            let _ = lock.release().await;
             return Err(RegisterError::EmailError(e.to_string()));
+        }
+
+        // Release Lock
+        if let Err(e) = lock.release().await {
+            // Log but don't fail the request as operation succeeded
+            error!("Failed to release register lock: {}", e);
         }
 
         Ok(RegisterResponse {

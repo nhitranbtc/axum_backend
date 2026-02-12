@@ -11,8 +11,11 @@ use std::sync::Arc;
 
 use crate::presentation::middleware::auth::{auth_middleware, AuthState};
 
-pub fn create_auth_routes<R: AuthRepository + 'static>(
-    register_uc: Arc<RegisterUseCase<R>>,
+pub fn create_auth_routes<
+    R: AuthRepository + 'static,
+    C: crate::infrastructure::cache::CacheRepository + ?Sized + Send + Sync + 'static,
+>(
+    register_uc: Arc<RegisterUseCase<R, C>>,
     login_uc: Arc<LoginUseCase<R>>,
     logout_uc: Arc<LogoutUseCase<R>>,
     verify_uc: Arc<VerifyEmailUseCase<R>>,
@@ -23,7 +26,7 @@ pub fn create_auth_routes<R: AuthRepository + 'static>(
 ) -> Router {
     // Public routes (no authentication required)
     let public_routes = Router::new()
-        .route("/register", post(auth::register::<R>))
+        .route("/register", post(auth::register::<R, C>))
         .with_state(register_uc)
         .route("/login", post(auth::login::<R>))
         .with_state(login_uc)

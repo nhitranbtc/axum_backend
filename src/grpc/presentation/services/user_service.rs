@@ -84,31 +84,29 @@ impl UserService for UserServiceImpl {
     ) -> Result<Response<UserResponse>, Status> {
         let req = request.into_inner();
         let email = req.email.clone();
-        
+
         tracing::info!("Received CreateUser request for email: {}", email);
 
         let worker = self.actor_pool.next_worker();
         let (tx, rx) = ractor::concurrency::oneshot();
 
-        worker.send_message(UserServiceMessage::CreateUser {
-            email: req.email,
-            name: req.name,
-            password: req.password,
-            role: req.role,
-            reply: tx.into(),
-        }).map_err(|e| {
-            tracing::error!("Failed to send message to actor: {:?}", e);
-            Status::internal("Internal server error")
-        })?;
+        worker
+            .send_message(UserServiceMessage::CreateUser {
+                email: req.email,
+                name: req.name,
+                password: req.password,
+                role: req.role,
+                reply: tx.into(),
+            })
+            .map_err(|e| {
+                tracing::error!("Failed to send message to actor: {:?}", e);
+                Status::internal("Internal server error")
+            })?;
 
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), rx)
             .await
-            .map_err(|_| {
-                Status::deadline_exceeded("Request timeout")
-            })?
-            .map_err(|_| {
-                Status::internal("Internal server error")
-            })??;
+            .map_err(|_| Status::deadline_exceeded("Request timeout"))?
+            .map_err(|_| Status::internal("Internal server error"))??;
 
         tracing::info!("Created user: {}", result.id);
         Ok(Response::new(result))

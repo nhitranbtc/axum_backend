@@ -151,10 +151,7 @@ impl UserRepository for RepositoryImpl {
                 RepositoryError::Internal(format!("Failed to get connection: {}", e))
             })?;
 
-        let count: i64 = users::table
-            .count()
-            .get_result(&mut conn)
-            .await?;
+        let count: i64 = users::table.count().get_result(&mut conn).await?;
 
         Ok(count)
     }
@@ -194,9 +191,7 @@ impl UserRepository for RepositoryImpl {
                 RepositoryError::Internal(format!("Failed to get connection: {}", e))
             })?;
 
-        let rows_affected = diesel::delete(users::table)
-            .execute(&mut conn)
-            .await?;
+        let rows_affected = diesel::delete(users::table).execute(&mut conn).await?;
 
         Ok(rows_affected)
     }

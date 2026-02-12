@@ -22,6 +22,10 @@ pub struct AppConfig {
     pub grpc_max_connections: usize,
     pub grpc_actor_pool_size: usize,
     pub grpc_cors_origins: Vec<String>,
+
+    // Redis Configuration
+    pub redis_url: String,
+    pub redis_pool_size: usize,
 }
 
 impl AppConfig {
@@ -83,6 +87,14 @@ impl AppConfig {
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),
+
+            // Redis Configuration
+            redis_url: env::var("REDIS_URL")
+                .unwrap_or_else(|_| "redis://127.0.0.1:6379/".to_string()),
+            redis_pool_size: env::var("REDIS_POOL_SIZE")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse()
+                .unwrap_or(10),
         })
     }
 

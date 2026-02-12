@@ -62,7 +62,8 @@ impl Actor for UserServiceActor {
                     "Processing CreateUser request"
                 );
 
-                let result = self.handle_create_user(email, name, password, role, &state.db_pool).await;
+                let result =
+                    self.handle_create_user(email, name, password, role, &state.db_pool).await;
 
                 if let Err(e) = reply.send(result) {
                     tracing::error!("Failed to send reply: {:?}", e);
@@ -150,9 +151,8 @@ impl UserServiceActor {
         db_pool: &DbPool,
     ) -> Result<UserResponse, Status> {
         // 1. Parse Email
-        let email = Email::parse(&email_str).map_err(|e| {
-            Status::invalid_argument(format!("Invalid email: {}", e))
-        })?;
+        let email = Email::parse(&email_str)
+            .map_err(|e| Status::invalid_argument(format!("Invalid email: {}", e)))?;
 
         // 2. Hash Password
         let password_hash = PasswordManager::hash(&password_str).map_err(|e| {
@@ -161,27 +161,25 @@ impl UserServiceActor {
         })?;
 
         // 3. Create User Entity
-        let mut user = User::new(email, name).map_err(|e| {
-            Status::invalid_argument(format!("Invalid user data: {}", e))
-        })?;
+        let mut user = User::new(email, name)
+            .map_err(|e| Status::invalid_argument(format!("Invalid user data: {}", e)))?;
         user.set_password(password_hash);
 
         // 4. Save to Repository
         let repo = UserRepositoryImpl::new(db_pool.clone());
-        
-        let saved_user = repo.save(&user).await.map_err(|e| {
-            match e {
-                crate::domain::repositories::user::RepositoryError::AlreadyExists(_) => 
-                    Status::already_exists(format!("Email {} already exists", email_str)),
-                crate::domain::repositories::user::RepositoryError::DatabaseError(msg) => {
-                    tracing::error!("Database error: {}", msg);
-                    Status::internal("Database error")
-                },
-                _ => {
-                    tracing::error!("Repository error: {}", e);
-                    Status::internal("Internal server error")
-                }
-            }
+
+        let saved_user = repo.save(&user).await.map_err(|e| match e {
+            crate::domain::repositories::user::RepositoryError::AlreadyExists(_) => {
+                Status::already_exists(format!("Email {} already exists", email_str))
+            },
+            crate::domain::repositories::user::RepositoryError::DatabaseError(msg) => {
+                tracing::error!("Database error: {}", msg);
+                Status::internal("Database error")
+            },
+            _ => {
+                tracing::error!("Repository error: {}", e);
+                Status::internal("Internal server error")
+            },
         })?;
 
         // 5. Return Response
@@ -200,7 +198,9 @@ impl UserServiceActor {
             }),
             role: saved_user.role.to_string(),
             is_active: saved_user.is_active,
-            last_login: saved_user.last_login.map(|dt| prost_types::Timestamp { seconds: dt.timestamp(), nanos: 0 }),
+            last_login: saved_user
+                .last_login
+                .map(|dt| prost_types::Timestamp { seconds: dt.timestamp(), nanos: 0 }),
             email_verified: saved_user.is_email_verified,
         })
     }

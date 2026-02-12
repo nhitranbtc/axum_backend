@@ -9,6 +9,6 @@ pub use auth::{
     SetPasswordUseCase, VerifyEmailUseCase,
 };
 pub use user::{
-    CreateUserUseCase, GetUserRoleUseCase, GetUserUseCase, ImportUsersUseCase, ListUsersUseCase,
-    UpdateUserRoleUseCase, UpdateUserUseCase,
+    CreateUserUseCase, DeleteUserUseCase, GetUserRoleUseCase, GetUserUseCase, ImportUsersUseCase,
+    ListUsersUseCase, UpdateUserRoleUseCase, UpdateUserUseCase,
 };

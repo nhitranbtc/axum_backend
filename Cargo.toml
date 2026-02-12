@@ -102,6 +102,7 @@ lettre = { version = "0.11", default-features = false, features = [
     "tracing",
 ] }
 askama = "0.15.4"
+redis = { version = "1.0.3", features = ["tokio-comp", "connection-manager"] }
 
 
 [dev-dependencies]

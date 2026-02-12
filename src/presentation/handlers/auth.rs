@@ -10,6 +10,7 @@ use crate::{
         },
     },
     domain::repositories::AuthRepository,
+    infrastructure::cache::CacheRepository,
     presentation::responses::ApiResponse,
     shared::utils::jwt::Claims,
 };
@@ -23,7 +24,7 @@ use axum_extra::extract::cookie::{Cookie, SameSite};
 use axum_extra::extract::CookieJar;
 use std::sync::Arc;
 use time::Duration;
-use validator::Validate; // fast dependency check: do I have time crate? axum-extra uses time.
+use validator::Validate;
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -72,8 +73,8 @@ impl IntoResponse for AuthError {
     ),
     tag = "auth"
 )]
-pub async fn register<R: AuthRepository>(
-    State(use_case): State<Arc<RegisterUseCase<R>>>,
+pub async fn register<R: AuthRepository, C: CacheRepository + ?Sized>(
+    State(use_case): State<Arc<RegisterUseCase<R, C>>>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<RegisterResponse>>), AuthError> {
     // Validate input

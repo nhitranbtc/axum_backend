@@ -1,11 +1,13 @@
 use axum_backend::{
     config::AppConfig,
+    infrastructure::cache::redis_cache::RedisCacheRepository,
     infrastructure::database::{connection::create_pool, connection::run_migrations},
     presentation::routes::create_router,
     shared::init_telemetry,
 };
 use axum_prometheus::PrometheusMetricLayer;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,6 +29,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create monitoring layer
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
 
+    // Create Redis Cache Repository
+    let cache_repository = Arc::new(RedisCacheRepository::new(&config.redis_url).await?);
+    tracing::info!("Redis cache repository initialized");
+
     // Create Email Service
     let email_service = std::sync::Arc::new(
         axum_backend::infrastructure::email::lettre_service::LettreEmailService::new()
@@ -45,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         prometheus_layer,
         metric_handle,
         email_service,
+        cache_repository,
     );
 
     // Parse server address

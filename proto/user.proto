@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package user;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// ============================================================================
+// USER SERVICE
+// ============================================================================
+
+// UserService provides comprehensive user management operations
+service UserService {
+    // User CRUD operations
+    rpc GetUser(GetUserRequest) returns (UserResponse);
+    rpc CreateUser(CreateUserRequest) returns (UserResponse);
+    rpc UpdateUser(UpdateUserRequest) returns (UserResponse);
+    rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty);
+    rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+    
+    // User authentication operations
+    rpc VerifyEmail(VerifyEmailRequest) returns (UserResponse);
+    rpc ResendConfirmationCode(ResendConfirmationCodeRequest) returns (google.protobuf.Empty);
+    rpc UpdatePassword(UpdatePasswordRequest) returns (google.protobuf.Empty);
+    
+    // User status operations
+    rpc ActivateUser(ActivateUserRequest) returns (UserResponse);
+    rpc DeactivateUser(DeactivateUserRequest) returns (UserResponse);
+}
+
+// ============================================================================
+// USER MESSAGES
+// ============================================================================
+
+// Get User Request
+message GetUserRequest {
+    string user_id = 1; // UUID format
+}
+
+// User Response
+message UserResponse {
+    string id = 1;
+    string name = 2;
+    string email = 3;
+    int64 created_at = 4; // Unix timestamp in seconds (for backward compatibility)
+    google.protobuf.Timestamp created_at_ts = 5;
+    google.protobuf.Timestamp updated_at = 6;
+    string role = 7;
+    bool is_active = 8;
+    optional google.protobuf.Timestamp last_login = 9;
+    bool email_verified = 10;
+}
+
+// Create User Request
+message CreateUserRequest {
+    string email = 1;
+    string name = 2;
+    string password = 3;  // Plain text password (will be hashed server-side)
+    optional string role = 4; // Defaults to "user" if not specified
+}
+
+// Update User Request
+message UpdateUserRequest {
+    string user_id = 1;
+    optional string name = 2;
+    optional string role = 3;
+}
+
+// Delete User Request
+message DeleteUserRequest {
+    string user_id = 1;
+}
+
+// List Users Request
+message ListUsersRequest {
+    optional int32 page = 1;      // Page number (default: 1)
+    optional int32 page_size = 2; // Items per page (default: 20, max: 100)
+    optional string role = 3;     // Filter by role
+    optional bool is_active = 4;  // Filter by active status
+    optional bool email_verified = 5; // Filter by email verification
+    optional string search = 6;   // Search by name or email
+}
+
+// List Users Response
+message ListUsersResponse {
+    repeated UserResponse users = 1;
+    int32 total_count = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+    int32 total_pages = 5;
+}
+
+// Verify Email Request
+message VerifyEmailRequest {
+    string user_id = 1;
+    string confirmation_code = 2; // max_length: 20
+}
+
+// Resend Confirmation Code Request
+message ResendConfirmationCodeRequest {
+    string email = 1;
+}
+
+// Update Password Request
+message UpdatePasswordRequest {
+    string user_id = 1;
+    string current_password = 2;
+    string new_password = 3;
+}
+
+// Activate User Request
+message ActivateUserRequest {
+    string user_id = 1;
+}
+
+// Deactivate User Request
+message DeactivateUserRequest {
+    string user_id = 1;
+}

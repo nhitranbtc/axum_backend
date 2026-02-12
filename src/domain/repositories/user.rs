@@ -40,13 +40,16 @@ pub trait UserRepository: Send + Sync {
 #[derive(Debug, thiserror::Error)]
 pub enum RepositoryError {
     #[error("Database error: {0}")]
-    Database(String),
+    DatabaseError(String),
 
     #[error("User not found")]
     NotFound,
 
-    #[error("Duplicate email: {0}")]
-    DuplicateEmail(String),
+    #[error("Resource already exists: {0}")]
+    AlreadyExists(String),
+
+    #[error("Connection error: {0}")]
+    ConnectionError(String),
 
     #[error("Internal error: {0}")]
     Internal(String),
@@ -58,9 +61,12 @@ impl From<diesel::result::Error> for RepositoryError {
             diesel::result::Error::NotFound => RepositoryError::NotFound,
             diesel::result::Error::DatabaseError(kind, info) => match kind {
                 diesel::result::DatabaseErrorKind::UniqueViolation => {
-                    RepositoryError::DuplicateEmail(info.message().to_string())
+                    RepositoryError::AlreadyExists(info.message().to_string())
                 },
-                _ => RepositoryError::Database(info.message().to_string()),
+                diesel::result::DatabaseErrorKind::ClosedConnection => {
+                    RepositoryError::ConnectionError(info.message().to_string())
+                },
+                _ => RepositoryError::DatabaseError(info.message().to_string()),
             },
             _ => RepositoryError::Internal(err.to_string()),
         }

@@ -79,8 +79,7 @@ impl UserRepository for RepositoryImpl {
             .do_update()
             .set(&db_user)
             .get_result::<UserModel>(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         Self::model_to_entity(result)
     }
@@ -96,8 +95,7 @@ impl UserRepository for RepositoryImpl {
         let result = diesel::update(users::table.filter(users::id.eq(user.id.as_uuid())))
             .set(&db_user)
             .get_result::<UserModel>(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         Self::model_to_entity(result)
     }
@@ -112,8 +110,7 @@ impl UserRepository for RepositoryImpl {
             .filter(users::id.eq(id.as_uuid()))
             .first::<UserModel>(&mut conn)
             .await
-            .optional()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .optional()?;
 
         result.map(Self::model_to_entity).transpose()
     }
@@ -128,8 +125,7 @@ impl UserRepository for RepositoryImpl {
             .filter(users::email.eq(email.as_str()))
             .first::<UserModel>(&mut conn)
             .await
-            .optional()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .optional()?;
 
         result.map(Self::model_to_entity).transpose()
     }
@@ -144,8 +140,7 @@ impl UserRepository for RepositoryImpl {
             .filter(users::email.eq(email.as_str()))
             .count()
             .get_result(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         Ok(count > 0)
     }
@@ -159,8 +154,7 @@ impl UserRepository for RepositoryImpl {
         let count: i64 = users::table
             .count()
             .get_result(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         Ok(count)
     }
@@ -176,8 +170,7 @@ impl UserRepository for RepositoryImpl {
             .limit(limit)
             .offset(offset)
             .load::<UserModel>(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         results.into_iter().map(Self::model_to_entity).collect::<Result<Vec<_>, _>>()
     }
@@ -190,8 +183,7 @@ impl UserRepository for RepositoryImpl {
 
         let rows_affected = diesel::delete(users::table.filter(users::id.eq(id.as_uuid())))
             .execute(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         Ok(rows_affected > 0)
     }
@@ -204,8 +196,7 @@ impl UserRepository for RepositoryImpl {
 
         let rows_affected = diesel::delete(users::table)
             .execute(&mut conn)
-            .await
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+            .await?;
 
         Ok(rows_affected)
     }

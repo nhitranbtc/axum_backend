@@ -62,16 +62,17 @@ impl<R: UserRepository> UserService<R> {
 impl From<RepositoryError> for AppError {
     fn from(err: RepositoryError) -> Self {
         match err {
-            RepositoryError::NotFound => AppError::NotFound("Resource not found".to_string()),
-            RepositoryError::DuplicateEmail(msg) => AppError::Validation(msg),
-            RepositoryError::Database(msg) => {
-                tracing::error!("Database error: {}", msg);
-                AppError::Internal(anyhow::anyhow!("Database error"))
+            RepositoryError::NotFound => AppError::NotFound(format!("User not found")),
+            RepositoryError::AlreadyExists(msg) => AppError::Validation(msg),
+            RepositoryError::DatabaseError(msg) => {
+                tracing::error!("Database error during user registration: {}", msg);
+                AppError::Internal(anyhow::anyhow!("Database error: {}", msg))
             },
             RepositoryError::Internal(msg) => {
-                tracing::error!("Repository internal error: {}", msg);
-                AppError::Internal(anyhow::anyhow!("Internal error"))
+                AppError::Internal(anyhow::anyhow!("Internal error: {}", msg))
             },
+            // Handle other variants potentially added
+            _ => AppError::Internal(anyhow::anyhow!("Unknown repository error")),
         }
     }
 }

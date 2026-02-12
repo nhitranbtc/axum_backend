@@ -78,6 +78,13 @@ async-trait = "0.1"
 ractor = "0.13"
 futures = "0.3.31"
 
+# gRPC
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+tonic-reflection = "0.12"
+tonic-web = "0.12"
+
 # Documentation (Swagger)
 utoipa = { version = "4", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "7", features = ["axum"], optional = true }
@@ -104,10 +111,16 @@ mockall = "0.12"
 criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 reqwest = { version = "0.11", features = ["json"] }
 tokio-test = "0.4"
-serial_test = "3.0"
-testcontainers-modules = { version = "0.14.0", features = ["postgres"] }
+testcontainers = "0.23.1"
+testcontainers-modules = { version = "0.11.2", features = ["postgres"] }
+goose = "0.17"
+goose-eggs = "0.6"
+tokio-stream = { version = "0.1.18", features = ["net"] }
 
 [[bench]]
 name = "backend_benchmarks"
 path = "tests/benchmarks/backend_benchmarks.rs"
 harness = false
+
+[build-dependencies]
+tonic-build = "0.12"

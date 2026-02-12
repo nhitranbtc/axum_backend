@@ -14,6 +14,14 @@ pub struct AppConfig {
     pub confirm_code_expiry: i64,
     pub rust_log: String,
     pub db_config: DatabaseConfig,
+
+    // gRPC Configuration
+    pub grpc_port: u16,
+    pub grpc_reflection_enabled: bool,
+    pub grpc_web_enabled: bool,
+    pub grpc_max_connections: usize,
+    pub grpc_actor_pool_size: usize,
+    pub grpc_cors_origins: Vec<String>,
 }
 
 impl AppConfig {
@@ -48,6 +56,33 @@ impl AppConfig {
                 .map_err(|_| ConfigError::InvalidTokenExpiry)?,
             rust_log: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
             db_config: DatabaseConfig::from_env(),
+
+            // gRPC Configuration
+            grpc_port: env::var("GRPC_PORT")
+                .unwrap_or_else(|_| "50051".to_string())
+                .parse()
+                .map_err(|_| ConfigError::InvalidPort)?,
+            grpc_reflection_enabled: env::var("GRPC_REFLECTION_ENABLED")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
+            grpc_web_enabled: env::var("GRPC_WEB_ENABLED")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
+            grpc_max_connections: env::var("GRPC_MAX_CONNECTIONS")
+                .unwrap_or_else(|_| "1000".to_string())
+                .parse()
+                .unwrap_or(1000),
+            grpc_actor_pool_size: env::var("GRPC_ACTOR_POOL_SIZE")
+                .unwrap_or_else(|_| "20".to_string())
+                .parse()
+                .unwrap_or(20),
+            grpc_cors_origins: env::var("GRPC_CORS_ORIGINS")
+                .unwrap_or_else(|_| "*".to_string())
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect(),
         })
     }
 

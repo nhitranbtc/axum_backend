@@ -2,6 +2,7 @@ pub mod assertions;
 pub mod factories;
 pub mod grpc_server;
 pub mod mock;
+pub mod repository_mocks;
 pub mod server;
 
 #[allow(unused_imports)]

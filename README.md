@@ -120,7 +120,14 @@ grpcurl -plaintext -d '{
 }' localhost:50051 user.UserService/CreateUser
 ```
 
-📖 **[gRPC Development Guide](docs/grpc_guide.md)**
+### NATS Client (Event Subscriber)
+
+```bash
+cargo run --bin nats_client
+# Subscribes to NATS events for testing and monitoring
+```
+
+📖 **[gRPC Development Guide](docs/grpc_guide.md)** | **[NATS Messaging Guide](docs/NATS_MESSAGING.md)**
 
 ---
 
@@ -191,17 +198,60 @@ The project leverages Redis for high performance and data consistency:
 
 ---
 
-## 📁 Project Structure
+## � NATS Messaging & Event-Driven Architecture
+
+The application uses **NATS** for asynchronous, event-driven communication between services.
+
+### Key Features
+
+1. **Event Publishing**:
+   - Automatic event publishing when domain entities change (e.g., User Updated)
+   - Versioned events (v1, v2) for backward compatibility
+   - Field change tracking for audit trails
+
+2. **Subject Hierarchy**:
+   - Pattern: `{env}.{domain}.{version}.{event_type}`
+   - Example: `dev.users.v2.updated`
+   - Supports wildcard subscriptions
+
+3. **Graceful Degradation**:
+   - Event publishing failures don't break main operations
+   - Comprehensive logging for debugging
+
+### Event Types
+
+- **UserCreatedEventV2**: Published when users are created
+- **UserUpdatedEventV2**: Published when users are updated (with field change tracking)
+- **UserDeletedEventV2**: Published when users are deleted
+
+### Quick Start
+
+```bash
+# Start NATS server
+docker run -d --name nats -p 4222:4222 nats:latest
+
+# Subscribe to events
+nats sub "dev.users.v2.*"
+
+# Or use the built-in client
+cargo run --bin nats_client
+```
+
+📖 **[NATS Integration Guide](docs/nats_guide.md)** | **[NATS Messaging Guide](docs/NATS_MESSAGING.md)**
+
+---
+
+## �📁 Project Structure
 
 ```text
 axum_backend/
 ├── src/
 │   ├── domain/             # Entities, Value Objects, Repository Traits
 │   ├── application/        # Use Cases, DTOs, Commands, Queries
-│   ├── infrastructure/     # Database (Diesel), Email, Cache (Redis), Config
+│   ├── infrastructure/     # Database (Diesel), Email, Cache (Redis), Messaging (NATS), Config
 │   ├── presentation/       # REST API Routes, Handlers, Middleware
 │   ├── grpc/               # gRPC Services, Handlers, Proto implementations
-│   ├── bin/                # Binary executables (grpc_server, grpc_client)
+│   ├── bin/                # Binary executables (grpc_server, grpc_client, nats_client)
 │   ├── config/             # Configuration management
 │   ├── shared/             # Errors, Utils, Telemetry
 │   ├── main.rs             # REST API server entry point
@@ -224,6 +274,9 @@ axum_backend/
 │   ├── ARCHITECTURE.md     # Architecture guide
 │   ├── GOOSE_LOAD_TESTING.md  # Load testing guide
 │   ├── grpc_guide.md       # gRPC development guide
+│   ├── REDIS_GUIDE.md      # Redis caching and locking guide
+│   ├── nats_guide.md       # NATS integration guide
+│   ├── NATS_MESSAGING.md   # NATS messaging detailed guide
 │   └── ...                 # Additional documentation
 └── Cargo.toml              # Dependencies & Build Profiles
 ```
@@ -263,6 +316,7 @@ axum_backend/
 
 - **Email**: Lettre (SMTP)
 - **Templates**: Handlebars
+- **Messaging**: NATS (Event-driven architecture)
 
 ### Testing & Load Testing
 

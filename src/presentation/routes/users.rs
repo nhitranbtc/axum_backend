@@ -20,24 +20,31 @@ use axum::{
 };
 use std::sync::Arc;
 
+
 /// Create user-related routes
 pub fn user_routes(
     pool: DbPool,
     auth_repo: Arc<AuthRepositoryImpl>,
     jwt_manager: Arc<JwtManager>,
     cache_repository: Arc<dyn CacheRepository>,
+    nats_client: Arc<crate::infrastructure::messaging::NatsClient>,
 ) -> Router {
     // Create repository
     let user_repo = Arc::new(UserRepositoryImpl::new(pool));
 
     // Create use cases
-    let create_user_uc =
-        Arc::new(CreateUserUseCase::new(user_repo.clone(), cache_repository.clone()));
+    let create_user_uc = Arc::new(CreateUserUseCase::new(
+        user_repo.clone(),
+        cache_repository.clone(),
+    ));
     let get_user_uc = Arc::new(GetUserUseCase::new(user_repo.clone(), cache_repository.clone()));
     let list_users_uc =
         Arc::new(ListUsersUseCase::new(user_repo.clone(), cache_repository.clone()));
-    let update_user_uc =
-        Arc::new(UpdateUserUseCase::new(user_repo.clone(), cache_repository.clone()));
+    let update_user_uc = Arc::new(UpdateUserUseCase::new(
+        user_repo.clone(),
+        cache_repository.clone(),
+        nats_client,
+    ));
     let delete_user_uc = Arc::new(crate::application::use_cases::DeleteUserUseCase::new(
         user_repo.clone(),
         cache_repository.clone(),

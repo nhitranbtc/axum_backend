@@ -110,6 +110,8 @@ impl TestServer {
             )
         };
 
+        let cache_repository = std::sync::Arc::new(crate::common::repository_mocks::MockCacheRepository);
+
         let app = create_router(
             pool,
             jwt_secret,
@@ -121,6 +123,7 @@ impl TestServer {
             prometheus_layer,
             metric_handle,
             email_service,
+            cache_repository,
         );
 
         // 5. Bind to Random Port

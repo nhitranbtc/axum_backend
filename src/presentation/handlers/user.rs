@@ -7,7 +7,7 @@ use crate::{
             UpdateUserUseCase,
         },
     },
-    domain::repositories::{user_repository::UserRepository, AuthRepository},
+    domain::{repositories::{user_repository::UserRepository, AuthRepository}},
     infrastructure::cache::CacheRepository,
     presentation::responses::ApiResponse,
     shared::AppError,

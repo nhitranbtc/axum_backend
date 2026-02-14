@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn test_create_user() {
         let email = Email::parse("test@example.com").unwrap();
-        let user = User::new(email, "John Doe".to_string(), "hashed_password".to_string()).unwrap();
+        let user = User::new(email, "John Doe".to_string()).unwrap();
 
         assert_eq!(user.name, "John Doe");
         assert_eq!(user.email.as_str(), "test@example.com");
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_create_user_empty_name() {
         let email = Email::parse("test@example.com").unwrap();
-        let result = User::new(email, "   ".to_string(), "hashed_password".to_string());
+        let result = User::new(email, "   ".to_string());
 
         assert!(result.is_err());
     }
@@ -165,7 +165,7 @@ mod tests {
     fn test_update_name() {
         let email = Email::parse("test@example.com").unwrap();
         let mut user =
-            User::new(email, "John Doe".to_string(), "hashed_password".to_string()).unwrap();
+            User::new(email, "John Doe".to_string()).unwrap();
 
         user.update_name("Jane Doe".to_string()).unwrap();
         assert_eq!(user.name, "Jane Doe");
@@ -175,7 +175,7 @@ mod tests {
     fn test_update_email() {
         let email = Email::parse("test@example.com").unwrap();
         let mut user =
-            User::new(email, "John Doe".to_string(), "hashed_password".to_string()).unwrap();
+            User::new(email, "John Doe".to_string()).unwrap();
 
         let new_email = Email::parse("new@example.com").unwrap();
         user.update_email(new_email);

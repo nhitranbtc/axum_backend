@@ -26,6 +26,12 @@ pub struct AppConfig {
     // Redis Configuration
     pub redis_url: String,
     pub redis_pool_size: usize,
+
+    // NATS Configuration
+    pub nats_url: String,
+    pub nats_user: Option<String>,
+    pub nats_password: Option<String>,
+    pub nats_token: Option<String>,
 }
 
 impl AppConfig {
@@ -95,6 +101,12 @@ impl AppConfig {
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
                 .unwrap_or(10),
+
+            // NATS Configuration
+            nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string()),
+            nats_user: env::var("NATS_USER").ok(),
+            nats_password: env::var("NATS_PASSWORD").ok(),
+            nats_token: env::var("NATS_TOKEN").ok(),
         })
     }
 

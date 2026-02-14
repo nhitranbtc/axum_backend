@@ -3,6 +3,7 @@ pub mod database;
 pub mod email;
 pub mod external_apis;
 pub mod monitoring;
+pub mod messaging;
 
 // Re-export commonly used items
 pub use cache::redis_cache::RedisCacheRepository;

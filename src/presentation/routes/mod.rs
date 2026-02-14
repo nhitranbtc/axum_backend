@@ -126,6 +126,7 @@ pub fn create_router(
     metric_handle: PrometheusHandle,
     email_service: Arc<dyn crate::application::services::email::EmailService>,
     cache_repository: Arc<dyn crate::infrastructure::cache::CacheRepository>,
+    nats_client: Arc<crate::infrastructure::messaging::NatsClient>,
 ) -> Router {
     // Create repositories
     let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()));
@@ -185,7 +186,7 @@ pub fn create_router(
                 jwt_manager.clone(),
             ),
         )
-        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager, cache_repository))
+        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager, cache_repository, nats_client))
         .layer(prometheus_layer)
         .layer(Extension(system_monitor))
 }

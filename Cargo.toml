@@ -107,7 +107,8 @@ redis = { version = "1.0.3", features = [
     "connection-manager",
     "cluster-async",
 ] }
-
+async-nats = "0.35"
+bytes = "1.11.1"
 
 [dev-dependencies]
 # Testing

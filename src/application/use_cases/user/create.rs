@@ -1,6 +1,10 @@
-use crate::{
+ use crate::{
     application::dto::CreateUserDto,
-    domain::{entities::User, repositories::user_repository::UserRepository, value_objects::Email},
+    domain::{
+        entities::User,
+        repositories::user_repository::UserRepository,
+        value_objects::Email,
+    },
     infrastructure::cache::CacheRepository,
     shared::AppError,
 };
@@ -10,12 +14,18 @@ use validator::Validate;
 /// Use case for creating a new user
 pub struct CreateUserUseCase<R: UserRepository, C: CacheRepository + ?Sized> {
     user_repository: Arc<R>,
-    cache_repository: Arc<C>, // Kept for potential list invalidation
+    _cache_repository: Arc<C>, // Kept for potential list invalidation
 }
 
 impl<R: UserRepository, C: CacheRepository + ?Sized> CreateUserUseCase<R, C> {
-    pub fn new(user_repository: Arc<R>, cache_repository: Arc<C>) -> Self {
-        Self { user_repository, cache_repository }
+    pub fn new(
+        user_repository: Arc<R>,
+        _cache_repository: Arc<C>,
+    ) -> Self {
+        Self {
+            user_repository,
+            _cache_repository,
+        }
     }
 
     pub async fn execute(&self, dto: CreateUserDto) -> Result<User, AppError> {
@@ -36,7 +46,8 @@ impl<R: UserRepository, C: CacheRepository + ?Sized> CreateUserUseCase<R, C> {
 
         // Create user entity
         // Note: This is a legacy endpoint. For proper authentication, use the /api/auth/register endpoint
-        let user = User::new(email, dto.name).map_err(|e| AppError::Validation(e.to_string()))?;
+        let user = User::new(email.clone(), dto.name.clone())
+            .map_err(|e| AppError::Validation(e.to_string()))?;
 
         // Save to repository
         let saved_user = self.user_repository.save(&user).await?;

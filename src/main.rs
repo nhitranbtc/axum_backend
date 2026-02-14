@@ -39,6 +39,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Failed to create email service"),
     );
 
+    // Create NATS Client
+    let nats_client = Arc::new(
+        axum_backend::infrastructure::messaging::NatsClient::new(&config.nats_url)
+            .await
+            .expect("Failed to create NATS client")
+    );
+    tracing::info!("NATS client initialized");
+
     // Create application router
     let app = create_router(
         pool,
@@ -52,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metric_handle,
         email_service,
         cache_repository,
+        nats_client,
     );
 
     // Parse server address

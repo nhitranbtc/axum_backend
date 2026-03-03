@@ -1,7 +1,7 @@
 use axum_backend::{
     config::AppConfig,
     infrastructure::cache::redis_cache::RedisCacheRepository,
-    infrastructure::database::{connection::create_pool, connection::run_migrations},
+    infrastructure::database::scylla::connection::create_scylla_session,
     presentation::routes::create_router,
     shared::init_telemetry,
 };
@@ -18,13 +18,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
     tracing::info!("Configuration loaded successfully");
 
-    // Create database connection pool
-    let pool = create_pool(&config.db_config, &config.database_url).await?;
-    tracing::info!("Database connection pool created");
-
-    // Run migrations
-    run_migrations(&config.database_url).await?;
-    tracing::info!("Database migrations completed");
+    // Create ScyllaDB session (initialises keyspace + tables automatically)
+    let scylla_session = Arc::new(create_scylla_session(&config.scylla).await?);
+    tracing::info!("ScyllaDB session created and schema initialized");
 
     // Create monitoring layer
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
@@ -43,13 +39,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let nats_client = Arc::new(
         axum_backend::infrastructure::messaging::NatsClient::new(&config.nats_url)
             .await
-            .expect("Failed to create NATS client")
+            .expect("Failed to create NATS client"),
     );
     tracing::info!("NATS client initialized");
 
     // Create application router
     let app = create_router(
-        pool,
+        scylla_session,
         config.jwt_secret.clone(),
         config.jwt_access_expiry,
         config.jwt_refresh_expiry,
@@ -61,7 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         email_service,
         cache_repository,
         nats_client,
-    );
+    )
+    .await;
 
     // Parse server address
     let addr: SocketAddr = config.server_address().parse()?;

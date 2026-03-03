@@ -1,68 +1,60 @@
-# Chef stage: Install cargo-chef for caching dependencies
+# ── Stage 1: Chef (dependency caching layer) ────────────────────────────────
 ARG RUST_VERSION=bookworm
 FROM rust:${RUST_VERSION} AS chef
 WORKDIR /app
-# Install build dependencies mostly needed for cargo-chef or other crates
-RUN apt-get update && apt-get install -y \
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cargo install cargo-chef --locked
 
-# Planner stage: Prepare recipe
+# ── Stage 2: Planner ─────────────────────────────────────────────────────────
 FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-# Builder stage: Build dependencies and application
+# ── Stage 3: Builder ─────────────────────────────────────────────────────────
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-# Build dependencies - this is the caching layer!
+
+# Cache dependencies separately from application code
 RUN cargo chef cook --release --recipe-path recipe.json
-# Build application
+
 COPY . .
 
-# Step 1: Cargo Check
-# Ensure the code compiles without errors before proceeding
+# Validate compilation
 RUN cargo check
 
-# Step 2: Cargo Format
-# Check format, if it fails, fix it.
-# We use `||` to run `cargo fmt` only if `cargo fmt -- --check` fails.
-# Note: cargo fmt modifies files in place, so the subsequent build will use formatted code.
-RUN cargo fmt -- --check || cargo fmt
-
-# Step 3: Build Release
+# Build release binary
 RUN cargo build --release --bin axum_backend
 
-# Runtime stage: Minimal runtime image
+# ── Stage 4: Runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
-# Install runtime dependencies (OpenSSL, PostgreSQL client lib)
+# Only OpenSSL + CA certs needed at runtime; no Postgres libs
 RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends openssl libssl-dev ca-certificates libpq-dev \
-    # Clean up
+    && apt-get install -y --no-install-recommends \
+    openssl \
+    libssl3 \
+    ca-certificates \
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the binary from builder
-COPY --from=builder /app/target/release/axum_backend /usr/local/bin/
+# Copy compiled binary
+COPY --from=builder /app/target/release/axum_backend /usr/local/bin/axum_backend
 
-# Copy configuration and migrations if needed at runtime
-# (Though we embedded migrations, it's good practice to keep structure)
-COPY --from=builder /app/migrations ./migrations
-
-# Don't run as root
+# Run as non-root
 RUN useradd -ms /bin/bash appuser
 USER appuser
 
-# Expose port
+# Expose HTTP API port
 EXPOSE 3000
 
-# Entrypoint
-CMD ["axum_backend"]
+ENTRYPOINT ["axum_backend"]

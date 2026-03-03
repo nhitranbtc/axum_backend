@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::user_service_actor::UserServiceActor;
 use super::messages::UserServiceMessage;
-use crate::infrastructure::database::connection::DbPool;
+use crate::infrastructure::database::DbPool;
 
 /// Actor pool for load balancing requests across multiple workers
 pub struct ActorPool {

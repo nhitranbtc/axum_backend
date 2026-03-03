@@ -1,7 +1,7 @@
 use ractor::RpcReplyPort;
 use tonic::Status;
 use crate::grpc::proto::UserResponse;
-use crate::infrastructure::database::connection::DbPool;
+use crate::infrastructure::database::DbPool;
 
 /// Messages that UserServiceActor can receive
 #[derive(Debug)]

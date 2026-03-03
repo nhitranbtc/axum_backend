@@ -2,7 +2,7 @@
 
 > **A modern, scalable backend service built with Rust and Axum, following Domain-Driven Design (DDD) and Clean Architecture principles.**
 
-![Rust](https://img.shields.io/badge/rust-1.75%2B-orange) ![Axum](https://img.shields.io/badge/axum-0.7-blue) ![Diesel](https://img.shields.io/badge/diesel-2.1-green) ![Docker](https://img.shields.io/badge/docker-ready-blue)
+![Rust](https://img.shields.io/badge/rust-1.75%2B-orange) ![Axum](https://img.shields.io/badge/axum-0.7-blue) ![Diesel](https://img.shields.io/badge/diesel-2.1-green) ![ScyllaDB](https://img.shields.io/badge/scylladb-6.2-blueviolet) ![Docker](https://img.shields.io/badge/docker-ready-blue)
 
 ## 🏗️ Architecture
 
@@ -22,14 +22,14 @@ This project implements a **layered architecture** designed for maintainability 
 ### Prerequisites
 
 - **Rust**: 1.75+ (`rustup update`)
-- **Docker**: For running the database and local development environment.
+- **Docker**: For running the database (PostgreSQL and ScyllaDB) and local development environment.
 - **Cargo Make** (Optional): For running workflows.
 
 ### 🛠️ Setup & Run
 
 #### Option 1: Docker (Recommended)
 
-Bootstrap the entire environment (Database + Redis + App + Monitoring):
+Bootstrap the entire environment (PostgreSQL + ScyllaDB + Redis + App + Monitoring):
 
 ```bash
 ./docker/backend/run_container.sh
@@ -37,7 +37,7 @@ Bootstrap the entire environment (Database + Redis + App + Monitoring):
 
 This will:
 
-1. Start PostgreSQL (with `axum` user and `axum_backend` db)
+1. Start PostgreSQL & ScyllaDB containers
 2. Run `cargo check` and `cargo fmt`
 3. Build the release binary
 4. Launch the application container on `host` network
@@ -177,11 +177,21 @@ cargo test --test grpc_tests stress -- --ignored --nocapture
 
 ---
 
-## ⚡ Redis Caching & Distributed Systems
+## ⚡ Redis & ScyllaDB (High Performance Data)
 
-The project leverages Redis for high performance and data consistency:
+The project leverages Redis for caching and ScyllaDB for high-throughput, low-latency persistence:
 
-### Key Features
+### ScyllaDB Features
+
+1. **Native Rust Driver**: High-performance asynchronous driver support.
+2. **Event Sourcing & Auditing**: Tracks all domain events at scale.
+3. **High-Velocity Reads/Writes**: Optimized for high-throughput user operations.
+
+📖 **[ScyllaDB Integration Guide](docs/SCYLLA_INTEGRATION.md)** | **[ScyllaDB Test Suite](docs/SCYLLA_TEST_SUITE.md)**
+
+---
+
+### Redis Features
 
 1. **Caching (Cache-Aside Pattern)**:
    - Optimizes read-heavy operations (e.g., `GetUser`, `ListUsers`).
@@ -198,7 +208,7 @@ The project leverages Redis for high performance and data consistency:
 
 ---
 
-## � NATS Messaging & Event-Driven Architecture
+## NATS Messaging & Event-Driven Architecture
 
 The application uses **NATS** for asynchronous, event-driven communication between services.
 
@@ -241,7 +251,7 @@ cargo run --bin nats_client
 
 ---
 
-## �📁 Project Structure
+## 📁 Project Structure
 
 ```text
 axum_backend/
@@ -275,6 +285,8 @@ axum_backend/
 │   ├── GOOSE_LOAD_TESTING.md  # Load testing guide
 │   ├── grpc_guide.md       # gRPC development guide
 │   ├── REDIS_GUIDE.md      # Redis caching and locking guide
+│   ├── SCYLLA_INTEGRATION.md # ScyllaDB architecture and setup guide
+│   ├── SCYLLA_TEST_SUITE.md  # ScyllaDB test isolation and infrastructure
 │   ├── nats_guide.md       # NATS integration guide
 │   ├── NATS_MESSAGING.md   # NATS messaging detailed guide
 │   └── ...                 # Additional documentation
@@ -295,8 +307,8 @@ axum_backend/
 
 ### Data & Persistence
 
-- **Database**: PostgreSQL 16
-- **ORM**: Diesel 2.1
+- **Databases**: PostgreSQL 16 (Relational) & ScyllaDB 6.2 (NoSQL/High-throughput)
+- **ORM**: Diesel 2.1 (for PostgreSQL), scylla-rust-driver (for ScyllaDB)
 - **Migrations**: Diesel CLI
 - **Caching**: Redis 7.2 (Cache-Aside, Distributed Locking)
 
@@ -326,43 +338,6 @@ axum_backend/
 - **Test Containers**: testcontainers
 
 ---
-
-## 🔥 Load Testing
-
-Professional-grade load testing using **Goose** (Rust-based framework).
-
-### Goose Quick Start
-
-```bash
-# Smoke test (5 users, 5 seconds)
-cargo run --example grpc_load_test -- --users 5 --hatch-rate 1 --run-time 5s
-
-# Load test (100 users, 5 minutes)
-cargo run --example grpc_load_test -- --users 100 --hatch-rate 10 --run-time 5m
-
-# Stress test with HTML report
-cargo run --example grpc_load_test -- \
-  --users 500 --hatch-rate 50 --run-time 10m \
-  --report-file stress_test.html
-```
-
-### Goose Key Features
-
-- ✅ Gradual ramp-up with configurable spawn rates
-- ✅ Real-time metrics (P50, P95, P99 latencies)
-- ✅ HTML reports with charts
-- ✅ 100% success rate (UUID-based uniqueness)
-
-### Verified Results
-
-- **Throughput**: 145 trans/s
-- **Latency**: Avg 2028ms, Min 1302ms, Max 2578ms
-- **Success Rate**: 100% (0 failures)
-
-📖 **[Full Load Testing Guide](docs/GOOSE_LOAD_TESTING.md)**
-
----
-
 ## 🤝 Contributing
 
 1. **Follow the Architecture**: Keep logic in the correct layer.

@@ -4,7 +4,7 @@ use axum_backend::{
         presentation::services::user_service::UserServiceImpl,
         proto::user_service_server::UserServiceServer,
     },
-    infrastructure::database::{connection::create_pool, connection::run_migrations},
+    infrastructure::database::scylla::connection::create_scylla_session,
     shared::init_telemetry,
 };
 use tonic::transport::Server;
@@ -23,20 +23,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
     tracing::info!("Configuration loaded successfully");
 
-    // Create database connection pool
-    let pool = create_pool(&config.db_config, &config.database_url).await?;
-    tracing::info!("Database connection pool created");
-
-    // Run migrations
-    run_migrations(&config.database_url).await?;
-    tracing::info!("Database migrations completed");
+    // Create ScyllaDB session (initialises keyspace + tables automatically)
+    let scylla_session = std::sync::Arc::new(create_scylla_session(&config.scylla).await?);
+    tracing::info!("ScyllaDB session created and schema initialized");
 
     let addr = format!("0.0.0.0:{}", config.grpc_port).parse()?;
 
     // Create user service with actor pool
     // Use configured actor pool size (default: 20)
     let actor_pool_size = config.grpc_actor_pool_size;
-    let user_service = UserServiceImpl::new(pool, actor_pool_size).await?;
+    let user_service = UserServiceImpl::new(scylla_session, actor_pool_size).await?;
 
     tracing::info!("🚀 gRPC Server starting on {}", addr);
     tracing::info!("📋 Configuration:");
@@ -46,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("   - Max Connections: {}", config.grpc_max_connections);
     tracing::info!("   - Actor Pool Size: {}", user_service.pool_size());
     tracing::info!("   - CORS Origins: {:?}", config.grpc_cors_origins);
-    tracing::info!("   - Database: Connected ✅");
+    tracing::info!("   - Database: ScyllaDB Connected ✅");
 
     // Configure CORS based on allowed origins
     let cors = if config.grpc_cors_origins.contains(&"*".to_string()) {

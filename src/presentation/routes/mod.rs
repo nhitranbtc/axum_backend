@@ -19,7 +19,7 @@ use crate::{
             SetPasswordUseCase, VerifyEmailUseCase,
         },
     },
-    infrastructure::database::{repositories::AuthRepositoryImpl, DbPool},
+    infrastructure::database::{AuthRepositoryImpl, DbPool},
     presentation::responses::{
         AuthResponseWrapper, ErrorResponseWrapper, StringResponseWrapper, UserListResponseWrapper,
         UserResponseWrapper,
@@ -114,7 +114,7 @@ impl Modify for SecurityAddon {
 }
 
 /// Create the main application router
-pub fn create_router(
+pub async fn create_router(
     pool: DbPool,
     jwt_secret: String,
     jwt_access_expiry: i64,
@@ -129,7 +129,7 @@ pub fn create_router(
     nats_client: Arc<crate::infrastructure::messaging::NatsClient>,
 ) -> Router {
     // Create repositories
-    let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()));
+    let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()).await.expect("Failed to initialize auth repository"));
     // let user_repo = Arc::new(UserRepositoryImpl::new(pool.clone()));
 
     // Create JWT manager
@@ -186,7 +186,7 @@ pub fn create_router(
                 jwt_manager.clone(),
             ),
         )
-        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager, cache_repository, nats_client))
+        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager, cache_repository, nats_client).await)
         .layer(prometheus_layer)
         .layer(Extension(system_monitor))
 }

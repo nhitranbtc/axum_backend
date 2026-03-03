@@ -17,17 +17,22 @@ pub struct LettreEmailService {
 
 impl LettreEmailService {
     pub fn new() -> Result<Self, AppError> {
-        let smtp_host = std::env::var("SMTP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let smtp_host = std::env::var("SMTP_HOST")
+            .map_err(|_| AppError::Config("SMTP_HOST must be set".to_string()))?;
+        let smtp_port = std::env::var("SMTP_PORT")
+            .map_err(|_| AppError::Config("SMTP_PORT must be set".to_string()))?
+            .parse::<u16>()
+            .map_err(|e| AppError::Config(format!("Invalid SMTP_PORT: {}", e)))?;
         let smtp_user = std::env::var("SMTP_USERNAME")
             .or_else(|_| std::env::var("SMTP_USER"))
-            .unwrap_or_default();
+            .map_err(|_| AppError::Config("SMTP_USERNAME or SMTP_USER must be set".to_string()))?;
         let smtp_pass = std::env::var("SMTP_PASSWORD")
             .or_else(|_| std::env::var("SMTP_PASS"))
-            .unwrap_or_default();
-        let from_email =
-            std::env::var("SMTP_FROM").unwrap_or_else(|_| "noreply@axum-backend.com".to_string());
+            .map_err(|_| AppError::Config("SMTP_PASSWORD or SMTP_PASS must be set".to_string()))?;
+        let from_email = std::env::var("SMTP_FROM")
+            .map_err(|_| AppError::Config("SMTP_FROM must be set".to_string()))?;
 
-        let creds = Credentials::new(smtp_user, smtp_pass);
+        let creds = Credentials::new(smtp_user.clone(), smtp_pass);
 
         // For production, you should use relay() and proper TLS.
         // For development/load testing, we use builder_unencrypted_localhost() or similar if no auth.
@@ -35,10 +40,12 @@ impl LettreEmailService {
         let mailer = if smtp_host == "127.0.0.1" || smtp_host == "localhost" {
             AsyncSmtpTransport::<Tokio1Executor>::unencrypted_localhost()
         } else {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp_host)
+            info!("Configuring SMTP relay for {}:{} with user {}", smtp_host, smtp_port, smtp_user);
+            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)
                 .map_err(|e| {
                     AppError::Internal(anyhow::anyhow!("Failed to build SMTP transport: {}", e))
                 })?
+                .port(smtp_port)
                 .credentials(creds)
                 .build()
         };

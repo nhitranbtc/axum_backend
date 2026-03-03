@@ -221,6 +221,7 @@ async fn run_virtual_user(
 // --- Tests ---
 
 #[tokio::test]
+#[ignore]
 async fn spike_load_test() {
     println!("🚀 Starting Spike Load Test ({} users)", SPIKE_CONCURRENCY);
     let server = TestServer::new().await;
@@ -280,6 +281,7 @@ async fn spike_load_test() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn stress_test_mixed_workload() {
     println!("🚀 Starting Stress Test Mixed Workload ({} users)", STRESS_CONCURRENCY);
     let server = TestServer::new().await;

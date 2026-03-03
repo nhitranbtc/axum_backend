@@ -1,5 +1,5 @@
 pub mod app_config;
-pub mod database;
+pub mod scylla;
 
 pub use app_config::AppConfig;
-pub use database::DatabaseConfig;
+pub use scylla::ScyllaConfig;

@@ -55,20 +55,4 @@ pub enum RepositoryError {
     Internal(String),
 }
 
-impl From<diesel::result::Error> for RepositoryError {
-    fn from(err: diesel::result::Error) -> Self {
-        match err {
-            diesel::result::Error::NotFound => RepositoryError::NotFound,
-            diesel::result::Error::DatabaseError(kind, info) => match kind {
-                diesel::result::DatabaseErrorKind::UniqueViolation => {
-                    RepositoryError::AlreadyExists(info.message().to_string())
-                },
-                diesel::result::DatabaseErrorKind::ClosedConnection => {
-                    RepositoryError::ConnectionError(info.message().to_string())
-                },
-                _ => RepositoryError::DatabaseError(info.message().to_string()),
-            },
-            _ => RepositoryError::Internal(err.to_string()),
-        }
-    }
-}
+

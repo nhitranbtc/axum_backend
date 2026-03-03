@@ -6,7 +6,7 @@ use crate::grpc::infrastructure::actors::{
     handlers::user_actor::UserServiceActor, messages::user_messages::UserServiceMessage,
     pool::actor_pool::ActorPool,
 };
-use crate::infrastructure::database::connection::DbPool;
+use crate::infrastructure::database::DbPool;
 
 /// gRPC User Service implementation with Actor Model
 #[derive(Clone)]

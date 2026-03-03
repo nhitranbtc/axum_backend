@@ -4,23 +4,11 @@ set -e
 # ==============================================================================
 # Configuration
 # ==============================================================================
-APP_NAME="axum_backend"
-IMAGE_NAME="axum_backend:latest"
-CONTAINER_NAME="axum_backend_app"
-DB_CONTAINER_NAME="axum_db"
-DB_IMAGE_NAME="postgres_with_init:latest"
-
-# Database Credentials (should match docker-compose.yml)
-DB_USER="axum"
-DB_PASS="axum123"
-DB_NAME="axum_backend"
-
-# NATS Credentials
-NATS_CONTAINER_NAME="nats_server"
-NATS_IMAGE_NAME="nats:latest"
-NATS_USER="myuser"
-NATS_PASS="mypass"
-NATS_PORT="4222"
+COMPOSE_FILE="docker/backend/docker-compose.yml"
+BACKEND_SERVICE="backend"
+SCYLLA_SERVICE="scylla"
+REDIS_SERVICE="redis"
+NATS_SERVICE="nats"
 
 # ==============================================================================
 # Helper Functions
@@ -42,21 +30,40 @@ log_error() {
     echo "❌ $1"
 }
 
-cleanup_container() {
-    local container_name=$1
-    local image_name=$2
-
-    if [ "$(docker ps -aq -f name=$container_name)" ]; then
-        log_info "Removing existing container: $container_name"
-        docker stop $container_name > /dev/null 2>&1 || true
-        docker rm $container_name > /dev/null 2>&1 || true
-    fi
-
-    if [ -n "$image_name" ] && [ "$(docker images -q $image_name)" ]; then
-        log_info "Removing existing image: $image_name"
-        docker rmi $image_name > /dev/null 2>&1 || true
-    fi
+usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  --clean       Cleanup database (ScyllaDB keyspace drop and Redis flush) before starting"
+    echo "  --build       Force rebuild of the application image (implies --clean)"
+    echo "  --stop        Stop and remove all containers"
+    echo "  --test        Run API registration test after startup"
+    echo "  --help        Show this help message"
+    exit 1
 }
+
+# ==============================================================================
+# Argument Parsing
+# ==============================================================================
+
+CLEAN_DB=false
+FORCE_BUILD=false
+STOP_ONLY=false
+RUN_TEST=false
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --clean) CLEAN_DB=true ;;
+        --build) 
+            FORCE_BUILD=true
+            CLEAN_DB=true 
+            ;;
+        --stop) STOP_ONLY=true ;;
+        --test) RUN_TEST=true ;;
+        --help) usage ;;
+        *) echo "Unknown parameter passed: $1"; usage ;;
+    esac
+    shift
+done
 
 # ==============================================================================
 # Main Script
@@ -68,116 +75,113 @@ PROJECT_ROOT="$SCRIPT_DIR/../.."
 cd "$PROJECT_ROOT" || { log_error "Failed to navigate to project root"; exit 1; }
 
 echo "============================================="
-echo "   � Starting Axum Backend Setup"
+echo "   🚀 Axum Backend Deployment Script"
 echo "============================================="
 echo ""
 
-# 2. Database Setup
-echo "============================================="
-echo "   🐘 Database Setup"
-echo "============================================="
-
-cleanup_container $DB_CONTAINER_NAME $DB_IMAGE_NAME
-docker volume rm postgres_data > /dev/null 2>&1 || true
-log_info "Removed old database volume."
-
-log_info "Building Database Image..."
-docker build -t $DB_IMAGE_NAME -f docker/postgres/Dockerfile docker/postgres
-
-log_info "Starting Database Container..."
-if docker run -d \
-    --name $DB_CONTAINER_NAME \
-    -p 5432:5432 \
-    -e POSTGRES_USER=$DB_USER \
-    -e POSTGRES_PASSWORD=$DB_PASS \
-    -e POSTGRES_DB=$DB_NAME \
-    -v postgres_data:/var/lib/postgresql/data \
-    --restart unless-stopped \
-    $DB_IMAGE_NAME > /dev/null; then
-        log_success "Database started successfully."
-else
-        log_error "Failed to start database."
-        exit 1
+# 2. Stop services if requested
+if [ "$STOP_ONLY" = true ]; then
+    log_info "Stopping all services..."
+    docker compose --env-file .env -f $COMPOSE_FILE down --remove-orphans
+    log_success "Services stopped."
+    exit 0
 fi
 
-log_info "Waiting 5s for Database to initialize..."
-sleep 5
+# 3. Handle Database Cleanup
+if [ "$CLEAN_DB" = true ]; then
+    log_warn "Cleaning up database data..."
+    
+    # Start infra services first to perform cleanup
+    log_info "Starting infrastructure for cleanup..."
+    docker compose --env-file .env -f $COMPOSE_FILE up -d $SCYLLA_SERVICE $REDIS_SERVICE $NATS_SERVICE
+    
+    # Wait for Scylla to be ready
+    log_info "Waiting for ScyllaDB to be healthy..."
+    while [ "$(docker inspect -f {{.State.Health.Status}} axum_scylla)" != "healthy" ]; do
+        sleep 2
+    done
 
+    # Cleanup ScyllaDB
+    log_info "Dropping ScyllaDB keyspace 'axum_backend'..."
+    docker exec axum_scylla sh -c 'cqlsh -u ${SCYLLA_USERNAME} -p ${SCYLLA_PASSWORD} -e "DROP KEYSPACE IF EXISTS ${SCYLLA_KEYSPACE};"' || log_error "Failed to drop ScyllaDB keyspace"
+    
+    # Cleanup Redis
+    log_info "Flushing Redis data..."
+    docker exec axum_redis redis-cli FLUSHALL || log_error "Failed to flush Redis"
 
-# 3. NATS Setup
+    log_success "Database cleanup complete."
+fi
+
+# 4. Launch Services
+log_info "Launching services..."
+
+BUILD_FLAG=""
+if [ "$FORCE_BUILD" = true ]; then
+    BUILD_FLAG="--build"
+fi
+
+# Use --force-recreate to ensure backend restarts and re-initializes after a potential cleanup
+docker compose --env-file .env -f $COMPOSE_FILE up -d $BUILD_FLAG --force-recreate --remove-orphans
+
+# 5. Summary
 echo ""
-echo "============================================="
-echo "   🚀 NATS Setup"
-echo "============================================="
-
-cleanup_container $NATS_CONTAINER_NAME
-# Note: we don't necessarily need to remove the image for NATS as we use the official one
-
-log_info "Starting NATS Container..."
-if docker run -d \
-    --name $NATS_CONTAINER_NAME \
-    -p $NATS_PORT:4222 \
-    --restart unless-stopped \
-    $NATS_IMAGE_NAME --user $NATS_USER --pass $NATS_PASS > /dev/null; then
-        log_success "NATS started successfully."
-else
-        log_error "Failed to start NATS."
-        exit 1
-fi
-
-# 4. Application Build
-echo ""
-echo "============================================="
-echo "   🔨 Application Build"
-echo "============================================="
-
-cleanup_container $CONTAINER_NAME $IMAGE_NAME
-
-# Determine Rust version
-if [ -f "rust-toolchain.toml" ]; then
-    RUST_VERSION=$(grep 'channel' rust-toolchain.toml | awk -F '"' '{print $2}')
-    RUST_VERSION=${RUST_VERSION:-bookworm}
-else
-    RUST_VERSION="bookworm"
-fi
-log_info "Using Rust version: $RUST_VERSION"
-
-log_info "Building Application Image..."
-docker build -f docker/backend/Dockerfile \
-    --build-arg RUST_VERSION="$RUST_VERSION" \
-    -t "$IMAGE_NAME" .
-
-# 4. Application Run
-echo ""
-echo "============================================="
-echo "   🏃 Running Application"
-echo "============================================="
-
-
-
-log_info "Starting Application Container..."
-# Using --network host for easiest local dev connection to the DB container running on 5432
-if docker run -d \
-  --name $CONTAINER_NAME \
-  --network host \
-  -e NATS_URL="nats://localhost:$NATS_PORT" \
-  -e NATS_USER="$NATS_USER" \
-  -e NATS_PASSWORD="$NATS_PASS" \
-  --env-file .env \
-  --restart unless-stopped \
-  $IMAGE_NAME > /dev/null; then
-    log_success "Application is running in Standalone Mode."
-else
-    log_error "Failed to start application."
-    exit 1
-fi
-
 echo "============================================="
 echo "   🎉 Deployment Complete"
 echo "============================================="
-echo "   - Main App:   http://localhost:3000"
-echo "   - Postgres:   localhost:5432 ($DB_USER / $DB_PASS)"
-echo "   - NATS:       localhost:$NATS_PORT ($NATS_USER / $NATS_PASS)"
-echo "   - Logs:       docker logs -f $CONTAINER_NAME"
+echo "   - Swagger UI:  http://localhost:3000/swagger-ui/"
+echo "   - Health:      http://localhost:3000/health"
+echo "   - ScyllaDB:    localhost:9042"
+echo "   - Redis:       localhost:6379"
+echo "   - NATS:        localhost:4222"
+echo "   - Logs:        docker logs -f axum_backend"
 echo "============================================="
 
+if [ "$CLEAN_DB" = true ]; then
+    log_info "Note: Schema will be automatically recreated by the backend on startup."
+fi
+
+# 6. API Smoke Test
+if [ "$RUN_TEST" = true ]; then
+    echo ""
+    echo "============================================="
+    echo "   🔍 API Smoke Test"
+    echo "============================================="
+    
+    # Wait for backend to be ready
+    log_info "Waiting for backend to be ready on port 3000..."
+    max_retries=10
+    count=0
+    while ! curl -s http://localhost:3000/health > /dev/null; do
+        sleep 2
+        count=$((count + 1))
+        if [ $count -ge $max_retries ]; then
+            log_error "Backend failed to become ready in time."
+            exit 1
+        fi
+    done
+
+    log_info "Running registration test..."
+    RESPONSE=$(curl -s -i -X 'POST' \
+        'http://localhost:3000/api/auth/register' \
+        -H 'accept: application/json' \
+        -H 'Content-Type: application/json' \
+        -d '{
+        "email": "user01@gmail.com",
+        "name": "User01",
+        "password": "Test@123"
+        }')
+
+    echo "$RESPONSE" | grep -q "HTTP/1.1 201 Created" && echo "$RESPONSE" | grep -q '{"success":true,"data":{' 
+    
+    if [ $? -eq 0 ]; then
+        log_success "Registration API test PASSED."
+    else
+        log_error "Registration API test FAILED."
+        echo "Response was:"
+        echo "$RESPONSE"
+        exit 1
+    fi
+
+    echo -e "\n--- Backend Logs (Tail) ---"
+    docker logs --tail 20 axum_backend
+fi

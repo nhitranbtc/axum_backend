@@ -9,7 +9,7 @@ use serde_json::json;
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("Database error: {0}")]
-    Database(#[from] diesel::result::Error),
+    Database(String),
 
     #[error("Not found: {0}")]
     NotFound(String),

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::grpc::infrastructure::actors::handlers::user_actor::UserServiceActor;
 use crate::grpc::infrastructure::actors::messages::user_messages::UserServiceMessage;
 use crate::grpc::infrastructure::actors::pool::actor_pool::ActorPool;
-use crate::infrastructure::database::connection::DbPool;
+use crate::infrastructure::database::DbPool;
 
 /// Service registry for managing actor pools
 pub struct ServiceRegistry {

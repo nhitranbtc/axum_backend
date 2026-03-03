@@ -5,7 +5,7 @@ use crate::{
         ListUsersUseCase, UpdateUserRoleUseCase, UpdateUserUseCase,
     },
     infrastructure::cache::CacheRepository,
-    infrastructure::database::repositories::{AuthRepositoryImpl, UserRepositoryImpl},
+    infrastructure::database::{AuthRepositoryImpl, UserRepositoryImpl},
     infrastructure::database::DbPool,
     presentation::{
         handlers::role::{get_user_role, update_user_role},
@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 
 /// Create user-related routes
-pub fn user_routes(
+pub async fn user_routes(
     pool: DbPool,
     auth_repo: Arc<AuthRepositoryImpl>,
     jwt_manager: Arc<JwtManager>,
@@ -30,7 +30,7 @@ pub fn user_routes(
     nats_client: Arc<crate::infrastructure::messaging::NatsClient>,
 ) -> Router {
     // Create repository
-    let user_repo = Arc::new(UserRepositoryImpl::new(pool));
+    let user_repo = Arc::new(UserRepositoryImpl::new(pool).await.expect("Failed to initialize user repository"));
 
     // Create use cases
     let create_user_uc = Arc::new(CreateUserUseCase::new(

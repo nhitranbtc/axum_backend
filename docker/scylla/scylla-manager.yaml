@@ -1,0 +1,9 @@
+http: ":5080"
+logger:
+  level: info
+database:
+  hosts:
+    - scylla1
+  replication_factor: 1
+  user: ${SCYLLA_MANAGER_DATABASE_USER}
+  password: ${SCYLLA_MANAGER_DATABASE_PASSWORD}

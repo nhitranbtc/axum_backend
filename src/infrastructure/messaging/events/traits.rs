@@ -2,7 +2,7 @@ use bytes::Bytes;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::infrastructure::messaging::error::{MessagingError, Result};
+use crate::infrastructure::messaging::error::Result;
 
 
 /// Trait for all event types that can be serialized and sent via messaging

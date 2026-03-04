@@ -1,31 +1,21 @@
-version: "3.8"
+# =============================================================================
+# Axum Backend — Docker Compose
+#
+# Services:
+#   ScyllaDB cluster (3 nodes) + Scylla Manager
+#   Redis, NATS
+#   Axum backend
+#
+# Start: bash docker/backend/run_container.sh
+# =============================================================================
+
+# ── YAML Anchors ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
-  # ── ScyllaDB ────────────────────────────────────────────────────────────────
-  scylla:
-    image: scylladb/scylla:6.2
-    container_name: axum_scylla
-    restart: unless-stopped
-    ports:
-      - "9042:9042"
-      - "9160:9160"
-      - "10000:10000"
-    volumes:
-      - scylla_data:/var/lib/scylla
-    env_file:
-      - ../../.env
-    command: --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1 --authenticator PasswordAuthenticator
-    healthcheck:
-      test: ["CMD-SHELL", "cqlsh -u $${SCYLLA_USERNAME} -p $${SCYLLA_PASSWORD} -e 'describe keyspaces' 2>/dev/null || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-    networks:
-      - axum_net
-
 
   # ── Redis ───────────────────────────────────────────────────────────────────
+
   redis:
     image: redis:7-alpine
     container_name: axum_redis
@@ -36,13 +26,14 @@ services:
       - axum_net
 
   # ── NATS ────────────────────────────────────────────────────────────────────
+
   nats:
     image: nats:latest
     container_name: axum_nats
     restart: unless-stopped
     ports:
-      - "4222:4222"   # Client connections
-      - "8222:8222"   # HTTP monitoring
+      - "4222:4222"    # Client connections
+      - "8222:8222"    # HTTP monitoring
     env_file:
       - ../../.env
     command: >
@@ -53,6 +44,7 @@ services:
       - axum_net
 
   # ── Axum Backend ────────────────────────────────────────────────────────────
+
   backend:
     build:
       context: ../..
@@ -64,20 +56,23 @@ services:
       - "3000:3000"
     env_file:
       - ../../.env
-
+    environment:
+      # Override with Docker service names (ignores any localhost values in .env)
+      - REDIS_URL=redis://redis:6379
+      - NATS_URL=nats://nats:4222
+      # SCYLLA_NODES and SCYLLA_REPLICATION_FACTOR are inherited from .env
+      # (must be set correctly in .env depending on single/cluster mode)
     depends_on:
-      scylla:
-        condition: service_healthy
       redis:
         condition: service_started
       nats:
         condition: service_started
     networks:
       - axum_net
+
+# ── Networks & Volumes ────────────────────────────────────────────────────────
+
 networks:
   axum_net:
-    driver: bridge
-
-volumes:
-  scylla_data:
-    driver: local
+    name: axum_net
+    external: true

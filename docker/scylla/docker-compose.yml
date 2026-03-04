@@ -1,0 +1,66 @@
+# =============================================================================
+# ScyllaDB 1-Node Setup + Scylla Manager
+# =============================================================================
+services:
+  scylla1:
+    build:
+      context: ../..
+      dockerfile: docker/scylla/Dockerfile
+    container_name: axum_scylla1
+    restart: unless-stopped
+    ports:
+      - "9042:9042"      # CQL native transport
+      - "10001:10001"    # Scylla Manager Agent REST API
+    volumes:
+      - scylla1_data:/var/lib/scylla
+    env_file:
+      - ../../.env
+    environment:
+      - SCYLLA_MANAGER_AGENT_AUTH_TOKEN=super-secret-token
+    command: >-
+      --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1 --reactor-backend epoll
+      --authenticator PasswordAuthenticator
+      --listen-address 0.0.0.0
+      --broadcast-address scylla1
+      --broadcast-rpc-address scylla1
+      --seed-provider-parameters seeds=scylla1
+    networks:
+      - axum_net
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -u $${SCYLLA_USERNAME} -p $${SCYLLA_PASSWORD} -e 'describe keyspaces' 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  scylla-manager:
+    image: scylladb/scylla-manager:latest
+    container_name: axum_scylla_manager
+    restart: unless-stopped
+    entrypoint: ["/manager-entrypoint.sh"]
+    ports:
+      - "5080:5080"    # Manager HTTP API (sctool)
+      - "5000:5000"
+    env_file:
+      - ../../.env
+    environment:
+      - SCYLLA_MANAGER_DATABASE_USER=${SCYLLA_USERNAME}
+      - SCYLLA_MANAGER_DATABASE_PASSWORD=${SCYLLA_PASSWORD}
+    volumes:
+      - scylla_manager_data:/var/lib/scylla-manager
+      - ./scylla-manager.yaml:/etc/scylla-manager/scylla-manager.yaml:ro
+      - ./manager-entrypoint.sh:/manager-entrypoint.sh:ro
+    depends_on:
+      scylla1:
+        condition: service_healthy
+    networks:
+      - axum_net
+
+networks:
+  axum_net:
+    name: axum_net
+    external: true
+
+volumes:
+  scylla1_data:
+  scylla_manager_data:

@@ -22,6 +22,10 @@ Dockerfile
 docker-compose.yml
 docker-compose.*.yml
 docker/
+!docker/scylla/scylla-manager-agent.conf
+!docker/scylla/entrypoint.sh
+!docker/scylla-cluster/scylla-manager-agent.conf
+!docker/scylla-cluster/entrypoint.sh
 
 # --- 📚 Documentation ---
 README.md

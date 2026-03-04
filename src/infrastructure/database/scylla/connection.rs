@@ -26,6 +26,20 @@ impl ScyllaSession {
             builder = builder.user(username, password);
         }
 
+        // Set default consistency level based on replication factor
+        let consistency = if config.replication_factor == 1 {
+            scylla::statement::Consistency::LocalOne
+        } else {
+            scylla::statement::Consistency::LocalQuorum
+        };
+        
+        // In the Scylla Rust driver, default consistency is set via an ExecutionProfile
+        let profile = scylla::client::execution_profile::ExecutionProfile::builder()
+            .consistency(consistency)
+            .build();
+            
+        builder = builder.default_execution_profile_handle(profile.into_handle());
+
         let session = builder
             .build()
             .await

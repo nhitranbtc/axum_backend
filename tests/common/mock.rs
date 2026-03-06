@@ -2,9 +2,7 @@ use std::time::Duration;
 
 use scylla::client::session_builder::SessionBuilder;
 use testcontainers_modules::testcontainers::{
-    core::ContainerPort,
-    runners::AsyncRunner,
-    ContainerAsync, GenericImage, ImageExt,
+    core::ContainerPort, runners::AsyncRunner, ContainerAsync, GenericImage, ImageExt,
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -65,9 +63,7 @@ impl MockScylla {
 impl Drop for MockScylla {
     fn drop(&mut self) {
         println!("🧹 Cleaning up ScyllaDB container: {}", self.id);
-        let _ = std::process::Command::new("docker")
-            .args(["rm", "-f", &self.id])
-            .output();
+        let _ = std::process::Command::new("docker").args(["rm", "-f", &self.id]).output();
     }
 }
 
@@ -78,10 +74,14 @@ async fn start_container() -> ContainerAsync<GenericImage> {
     GenericImage::new(SCYLLA_IMAGE, SCYLLA_VERSION)
         .with_exposed_port(ContainerPort::Tcp(SCYLLA_CQL_PORT))
         .with_cmd([
-            "--smp", "1",
-            "--memory", "512M",
-            "--developer-mode", "1",
-            "--authenticator", "PasswordAuthenticator",
+            "--smp",
+            "1",
+            "--memory",
+            "512M",
+            "--developer-mode",
+            "1",
+            "--authenticator",
+            "PasswordAuthenticator",
         ])
         .start()
         .await
@@ -99,11 +99,7 @@ async fn start_container() -> ContainerAsync<GenericImage> {
 async fn wait_until_cql_ready(contact_node: &str) {
     println!("⏳ Waiting for ScyllaDB CQL server to become ready...");
 
-    let result = tokio::time::timeout(
-        SCYLLA_READY_TIMEOUT,
-        probe_until_ready(contact_node),
-    )
-    .await;
+    let result = tokio::time::timeout(SCYLLA_READY_TIMEOUT, probe_until_ready(contact_node)).await;
 
     match result {
         Ok(()) => println!("✅ ScyllaDB CQL server is ready."),
@@ -128,7 +124,7 @@ async fn probe_until_ready(contact_node: &str) {
                     first_failure = false;
                 }
                 tokio::time::sleep(SCYLLA_RETRY_INTERVAL).await;
-            }
+            },
         }
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     shared::utils::password::PasswordManager,
 };
 use std::{sync::Arc, time::Duration};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegisterError {
@@ -63,25 +63,22 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
         name: String,
         password: Option<String>,
     ) -> Result<RegisterResponse, RegisterError> {
-        // Validate email format
+        // Validate email early so all following logic can rely on normalized value.
         let email_vo = Email::parse(&email).map_err(|_| RegisterError::InvalidEmail)?;
+        info!(email = %email_vo.as_str(), "starting user registration");
 
-        // Distributed Lock to prevent concurrent registration
         let lock_key = format!("lock:register:{}", email_vo.as_str());
         let lock_value = uuid::Uuid::new_v4().to_string();
-        let lock_ttl = Duration::from_secs(10); // Hold lock for 10 seconds max
+        let lock_ttl = Duration::from_secs(10);
 
         let lock =
             DistributedLock::new(self.cache_repository.clone(), lock_key, lock_value, lock_ttl);
 
         if !lock.acquire().await.map_err(|e| RegisterError::LockError(e.to_string()))? {
+            info!(email = %email_vo.as_str(), "registration blocked by concurrent lock");
             return Err(RegisterError::ConcurrentRegistration);
         }
 
-        // Use a closure or explicit release to ensure lock is released (RAII not fully implemented for async)
-        // We will manually release at end.
-
-        // Check if user already exists
         if (self
             .auth_repo
             .find_by_email(email_vo.as_str())
@@ -89,32 +86,16 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
             .map_err(|e| RegisterError::RepositoryError(e.to_string()))?)
         .is_some()
         {
-            let _ = lock.release().await; // Release lock before returning
+            if let Err(e) = lock.release().await {
+                error!(email = %email_vo.as_str(), error = %e, "failed to release registration lock");
+            }
             return Err(RegisterError::EmailAlreadyExists);
         }
 
-        // Generate Confirmation Code
-        use rand::Rng;
-        let confirmation_code: String = rand::thread_rng()
-            .sample_iter(&rand::distributions::Uniform::new(0, 10))
-            .take(6)
-            .map(|x| x.to_string())
-            .collect();
-
+        let confirmation_code = generate_confirmation_code();
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(self.confirm_code_expiry);
+        let password_hash = hash_password(password).await?;
 
-        // Hash password if provided
-        let password_hash = if let Some(pw) = password {
-            let hash = tokio::task::spawn_blocking(move || PasswordManager::hash(&pw))
-                .await
-                .map_err(|e| RegisterError::PasswordHashError(e.to_string()))?
-                .map_err(|e| RegisterError::PasswordHashError(e.to_string()))?;
-            Some(hash)
-        } else {
-            None
-        };
-
-        // Create user with optional pre-hashed password
         let user_result = self
             .auth_repo
             .create_user(
@@ -129,7 +110,13 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
         let user = match user_result {
             Ok(u) => u,
             Err(e) => {
-                let _ = lock.release().await;
+                if let Err(release_err) = lock.release().await {
+                    error!(
+                        email = %email_vo.as_str(),
+                        error = %release_err,
+                        "failed to release registration lock after repository error"
+                    );
+                }
                 return Err(match e {
                     AuthRepositoryError::EmailAlreadyExists => RegisterError::EmailAlreadyExists,
                     _ => RegisterError::RepositoryError(e.to_string()),
@@ -137,26 +124,34 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
             },
         };
 
-        // Send confirmation email
         let recipient = Recipient { email: email_vo.as_str().to_string(), name: user.name.clone() };
 
         if let Err(e) = self
             .email_service
-            .send(recipient, EmailType::Confirmation(confirmation_code.clone()))
+            .send(recipient, EmailType::Confirmation(confirmation_code))
             .await
         {
-            error!("Failed to send confirmation email to {}: {}", email_vo.as_str(), e);
-            info!("CRITICAL (DEV): Confirmation code for {} is: {}", email_vo.as_str(), confirmation_code);
-            // In production, we might want to fail. In dev/test, we allow it to proceed.
-            // For now, we return Success but with the warning in logs.
-            // Result is OK, but we return a slightly different message if we could.
+            // Registration still succeeds to avoid blocking account creation on transient email failures.
+            warn!(
+                email = %email_vo.as_str(),
+                error = %e,
+                "confirmation email delivery failed after user creation"
+            );
         }
 
-        // Release Lock
         if let Err(e) = lock.release().await {
-            // Log but don't fail the request as operation succeeded
-            error!("Failed to release register lock: {}", e);
+            error!(
+                email = %email_vo.as_str(),
+                error = %e,
+                "failed to release registration lock"
+            );
         }
+
+        info!(
+            email = %email_vo.as_str(),
+            user_id = %user.id.as_uuid(),
+            "user registration completed"
+        );
 
         Ok(RegisterResponse {
             message: "Registration successful. Please check your email for the confirmation code."
@@ -167,5 +162,27 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
                 name: user.name.clone(),
             },
         })
+    }
+}
+
+fn generate_confirmation_code() -> String {
+    use rand::Rng;
+    rand::thread_rng()
+        .sample_iter(&rand::distributions::Uniform::new(0, 10))
+        .take(6)
+        .map(|x| x.to_string())
+        .collect()
+}
+
+async fn hash_password(password: Option<String>) -> Result<Option<String>, RegisterError> {
+    match password {
+        Some(pw) => {
+            let hash = tokio::task::spawn_blocking(move || PasswordManager::hash(&pw))
+                .await
+                .map_err(|e| RegisterError::PasswordHashError(e.to_string()))?
+                .map_err(|e| RegisterError::PasswordHashError(e.to_string()))?;
+            Ok(Some(hash))
+        },
+        None => Ok(None),
     }
 }

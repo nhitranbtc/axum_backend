@@ -1,4 +1,4 @@
-use super::{MessagingService, connection, Result};
+use super::{connection, MessagingService, Result};
 use async_nats::{Client, Subscriber};
 use bytes::Bytes;
 
@@ -12,7 +12,7 @@ impl NatsClient {
         let client = connection::connect(url).await?;
         Ok(Self { client })
     }
-    
+
     /// Get a reference to the underlying NATS client
     pub fn client(&self) -> &Client {
         &self.client

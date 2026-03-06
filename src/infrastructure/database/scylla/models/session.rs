@@ -20,8 +20,7 @@ impl UserSessionRow {
         "INSERT INTO user_sessions (session_id, user_id, data, expires_at, created_at) \
          VALUES (?, ?, ?, ?, ?)";
 
-    pub const DELETE_QUERY: &'static str =
-        "DELETE FROM user_sessions WHERE session_id = ?";
+    pub const DELETE_QUERY: &'static str = "DELETE FROM user_sessions WHERE session_id = ?";
 
     // ── Factory ───────────────────────────────────────────────────────────────
 
@@ -69,8 +68,12 @@ impl BaseModel for UserSessionRow {
         "SELECT session_id, user_id, data, expires_at, created_at \
          FROM user_sessions WHERE session_id = ?";
 
-    fn primary_key_values(&self) -> (Uuid,) { (self.session_id,) }
-    fn partition_key_values(&self) -> (Uuid,) { (self.session_id,) }
+    fn primary_key_values(&self) -> (Uuid,) {
+        (self.session_id,)
+    }
+    fn partition_key_values(&self) -> (Uuid,) {
+        (self.session_id,)
+    }
 }
 
 impl Model for UserSessionRow {
@@ -83,4 +86,3 @@ impl Model for UserSessionRow {
     const DELETE_QUERY: &'static str = UserSessionRow::DELETE_QUERY;
     const DELETE_BY_PARTITION_KEY_QUERY: &'static str = UserSessionRow::DELETE_QUERY;
 }
-

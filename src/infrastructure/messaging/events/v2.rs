@@ -59,10 +59,7 @@ pub struct FieldChange {
 
 impl FieldChange {
     pub fn new(previous_value: Option<String>, new_value: Option<String>) -> Self {
-        Self {
-            previous_value,
-            new_value,
-        }
+        Self { previous_value, new_value }
     }
 }
 
@@ -201,10 +198,7 @@ mod tests {
     #[test]
     fn test_user_updated_event_v2_serialization() {
         let event = UserUpdatedEventV2::new("user-123".to_string())
-            .with_name_change(
-                Some("John Doe".to_string()),
-                Some("Jane Doe".to_string()),
-            )
+            .with_name_change(Some("John Doe".to_string()), Some("Jane Doe".to_string()))
             .with_updated_by("admin-456".to_string())
             .with_metadata("reason".to_string(), "name_correction".to_string());
 
@@ -235,10 +229,7 @@ mod tests {
 
     #[test]
     fn test_field_change() {
-        let change = FieldChange::new(
-            Some("old_value".to_string()),
-            Some("new_value".to_string()),
-        );
+        let change = FieldChange::new(Some("old_value".to_string()), Some("new_value".to_string()));
 
         assert_eq!(change.previous_value, Some("old_value".to_string()));
         assert_eq!(change.new_value, Some("new_value".to_string()));

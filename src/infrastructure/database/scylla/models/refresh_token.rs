@@ -65,8 +65,12 @@ impl BaseModel for RefreshTokenRow {
     const FIND_BY_PRIMARY_KEY_QUERY: &'static str = RefreshTokenRow::FIND_BY_PRIMARY_KEY_QUERY;
     const FIND_BY_PARTITION_KEY_QUERY: &'static str = RefreshTokenRow::FIND_BY_PRIMARY_KEY_QUERY;
 
-    fn primary_key_values(&self) -> (String,) { (self.token_hash.clone(),) }
-    fn partition_key_values(&self) -> (String,) { (self.token_hash.clone(),) }
+    fn primary_key_values(&self) -> (String,) {
+        (self.token_hash.clone(),)
+    }
+    fn partition_key_values(&self) -> (String,) {
+        (self.token_hash.clone(),)
+    }
 }
 
 impl Model for RefreshTokenRow {
@@ -75,9 +79,7 @@ impl Model for RefreshTokenRow {
         "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, created_at, revoked_at) \
          VALUES (?, ?, ?, ?, ?) IF NOT EXISTS";
     const UPDATE_QUERY: &'static str = RefreshTokenRow::REVOKE_QUERY;
-    const DELETE_QUERY: &'static str =
-        "DELETE FROM refresh_tokens WHERE token_hash = ?";
+    const DELETE_QUERY: &'static str = "DELETE FROM refresh_tokens WHERE token_hash = ?";
     const DELETE_BY_PARTITION_KEY_QUERY: &'static str =
         "DELETE FROM refresh_tokens WHERE token_hash = ?";
 }
-

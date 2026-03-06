@@ -75,10 +75,7 @@ async fn test_set_password_too_short() {
     let code = server.get_confirmation_code(&email).await;
 
     let res = server
-        .post_json(
-            "/api/auth/password",
-            json!({ "email": email, "code": code, "password": "123" }),
-        )
+        .post_json("/api/auth/password", json!({ "email": email, "code": code, "password": "123" }))
         .await;
 
     assert_error(&res);
@@ -122,6 +119,34 @@ async fn test_login_wrong_credentials() {
         )
         .await;
     assert_error(&wrong_email);
+}
+
+/// If both code and password are provided, invalid code should not block
+/// a valid password-based login.
+#[tokio::test]
+#[serial]
+async fn test_login_fallback_to_password_when_code_invalid() {
+    let server = TestServer::new().await;
+    let email = "logincodefallback@test.com".to_string();
+
+    server.register_user(&email, "Login Fallback User", TEST_PASSWORD).await;
+
+    let resp = server
+        .post_json(
+            "/api/auth/login",
+            json!({
+                "email": email,
+                "password": TEST_PASSWORD,
+                "code": "000000"
+            }),
+        )
+        .await;
+
+    assert_success(&resp);
+    assert!(
+        resp["data"]["access_token"].as_str().is_some_and(|t| !t.is_empty()),
+        "Expected access token in login response"
+    );
 }
 
 // ============================================================================
@@ -261,9 +286,7 @@ async fn test_resend_code_flow() {
     assert_success(&reg);
 
     // Resend a fresh code
-    let resend = server
-        .post_json("/api/auth/resend-code", json!({ "email": email }))
-        .await;
+    let resend = server.post_json("/api/auth/resend-code", json!({ "email": email })).await;
     assert_success(&resend);
 
     // Verify with the (stub) code

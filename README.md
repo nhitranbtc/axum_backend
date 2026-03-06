@@ -36,16 +36,17 @@ All container management is handled by a single script:
 
 #### Options
 
-| Flag        | Description                                                      |
-| ----------- | ---------------------------------------------------------------- |
-| `--single`  | Use a **single-node** ScyllaDB (default for local dev)           |
-| `--cluster` | Use a **3-node** ScyllaDB cluster _(default)_                    |
-| `--build`   | Force rebuild of the backend image _(implies `--clean`)_         |
-| `--clean`   | Drop the ScyllaDB keyspace and flush Redis before starting       |
-| `--stop`    | Stop and remove all containers                                   |
-| `--remove`  | Stop containers, remove volumes, and delete locally built images |
-| `--test`    | Run the full API smoke test after startup                        |
-| `--help`    | Show usage                                                       |
+| Flag        | Description                                                                  |
+| ----------- | ---------------------------------------------------------------------------- |
+| `--single`  | Use a **single-node** ScyllaDB (docker/scylla)                               |
+| `--cluster` | Use a **3-node** ScyllaDB cluster _(default)_ (docker/scylla-cluster)        |
+| `--build`   | Force rebuild of the backend image _(implies `--clean`)_                     |
+| `--clean`   | Drop the ScyllaDB keyspace and flush Redis before starting                   |
+| `--stop`    | Stop all containers (without removing them)                                  |
+| `--restart` | Stop all containers then redeploy _(combinable with `--single`/`--cluster`)_ |
+| `--remove`  | Stop containers, remove volumes, and delete locally built images             |
+| `--test`    | Run the full API smoke test (register → verify → login)                      |
+| `--help`    | Show usage                                                                   |
 
 ---
 
@@ -84,14 +85,34 @@ All container management is handled by a single script:
 ./docker/backend/run_container.sh --single --clean
 ```
 
-#### 🛑 Stop / Remove
+#### Stop / Remove
 
 ```bash
-# Stop all containers (data preserved)
+# Stop all containers without removing them (containers and data preserved)
 ./docker/backend/run_container.sh --stop
 
-# Full teardown: containers + volumes + locally built images
+# Full teardown: removes containers, volumes, and locally built images
 ./docker/backend/run_container.sh --remove
+```
+
+---
+
+#### Restart (`--restart`)
+
+Stops all running containers, then performs a fresh deploy — equivalent to `--stop` followed by a full startup.
+
+```bash
+# Restart with the default cluster mode
+./docker/backend/run_container.sh --restart
+
+# Restart single-node setup
+./docker/backend/run_container.sh --single --restart
+
+# Restart, drop DB data, and rebuild the image in one shot
+./docker/backend/run_container.sh --restart --clean --build
+
+# Restart and run smoke test afterwards
+./docker/backend/run_container.sh --restart --test
 ```
 
 ---
@@ -144,11 +165,22 @@ docker logs -f axum_nats
 
 ---
 
-### � Local Development (without Docker)
+### Local Development
+
+First, ensure the infrastructure (ScyllaDB, Redis, NATS) is running:
+
+```bash
+./docker/backend/run_container.sh --single
+```
+
+Then, you can run the binaries locally.
 
 ```bash
 # REST API server (port 3000)
-cargo run
+cargo run --bin axum_backend
+
+# Release profile (max performance, LTO)
+cargo run --release --bin axum_backend
 
 # gRPC server (port 50051)
 cargo run --bin grpc_server
@@ -243,11 +275,18 @@ HTTP-level integration tests — auth, users, cookies, health, preflight:
 # Run all API tests
 cargo test --test api_tests
 
+# Run all Post feature API tests
+cargo test --test api_tests post
+
+# Run only the post suite
+cargo test --test api_tests api::post
+
 # Run only the auth suite
 cargo test --test api_tests api::auth
 
 # Run a single named test
 cargo test --test api_tests test_register_success
+cargo test --test api_tests test_get_post_success
 cargo test --test api_tests test_login_success
 cargo test --test api_tests test_login_wrong_credentials
 cargo test --test api_tests test_register_duplicate_email
@@ -262,6 +301,9 @@ cargo test --test api_tests test_login_with_code_flow
 
 # Run with output visible
 cargo test --test api_tests -- --nocapture
+
+# Run Post tests with output visible
+cargo test --test api_tests post -- --nocapture
 ```
 
 ---

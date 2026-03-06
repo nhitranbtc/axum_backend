@@ -8,6 +8,9 @@
 //!
 //! Prerequisites: Docker must be running on the host.
 
+pub mod post;
+
+use crate::common::mock::MockScylla;
 use anyhow::Result;
 use axum_backend::{
     config::scylla::ScyllaConfig,
@@ -22,25 +25,25 @@ use axum_backend::{
 };
 use serial_test::serial;
 use std::sync::Arc;
-use crate::common::mock::MockScylla;
-use uuid::Uuid;
 use tokio::sync::OnceCell;
-
+use uuid::Uuid;
 
 /// Start a ScyllaDB container and return an Arc<ScyllaSession> connected to it.
 /// The container is kept alive globally using a OnceCell.
 static ONCE_MOCK_SCYLLA: OnceCell<MockScylla> = OnceCell::const_new();
 
 async fn start_scylla() -> Result<Arc<ScyllaSession>> {
-    let mock_db = ONCE_MOCK_SCYLLA
-        .get_or_init(|| async { MockScylla::new().await })
-        .await;
+    let mock_db = ONCE_MOCK_SCYLLA.get_or_init(|| async { MockScylla::new().await }).await;
 
     let config = ScyllaConfig {
         nodes: vec![mock_db.contact_node.clone()],
         keyspace: format!("test_keyspace_{}", uuid::Uuid::new_v4().simple()),
-        username: Some(std::env::var("SCYLLA_USERNAME").unwrap_or_else(|_| "cassandra".to_string())),
-        password: Some(std::env::var("SCYLLA_PASSWORD").unwrap_or_else(|_| "cassandra".to_string())),
+        username: Some(
+            std::env::var("SCYLLA_USERNAME").unwrap_or_else(|_| "cassandra".to_string()),
+        ),
+        password: Some(
+            std::env::var("SCYLLA_PASSWORD").unwrap_or_else(|_| "cassandra".to_string()),
+        ),
         replication_factor: 1,
     };
 
@@ -64,9 +67,7 @@ async fn test_scylla_connection() {
 #[serial]
 async fn test_user_repository_operations() {
     use axum_backend::domain::{
-        entities::User,
-        repositories::user_repository::UserRepository,
-        value_objects::Email,
+        entities::User, repositories::user_repository::UserRepository, value_objects::Email,
     };
 
     let session = start_scylla().await.expect("Failed to start container");
@@ -268,11 +269,8 @@ async fn test_event_repository_operations() {
     let repo = Arc::new(EventRepository::new(Arc::clone(&session)));
 
     let user_id = Uuid::new_v4();
-    let event = UserEventRow::new(
-        user_id,
-        "test.event".to_string(),
-        r#"{"action": "test"}"#.to_string(),
-    );
+    let event =
+        UserEventRow::new(user_id, "test.event".to_string(), r#"{"action": "test"}"#.to_string());
 
     let result = repo.save_event(&event).await;
     assert!(result.is_ok(), "save_event failed: {:?}", result.err());

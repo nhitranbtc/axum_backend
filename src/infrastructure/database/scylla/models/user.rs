@@ -32,8 +32,7 @@ pub struct UserRow {
 impl UserRow {
     // ── Select column list ────────────────────────────────────────────────────
     /// Canonical column list used in every SELECT (single source of truth).
-    pub const COLUMNS: &'static str =
-        "user_id, email, name, password_hash, role, is_active, \
+    pub const COLUMNS: &'static str = "user_id, email, name, password_hash, role, is_active, \
          email_verified, confirmation_code, confirmation_code_expires_at, \
          last_login, created_at, updated_at";
 
@@ -104,8 +103,12 @@ impl BaseModel for UserRow {
     const FIND_BY_PRIMARY_KEY_QUERY: &'static str = UserRow::FIND_BY_PRIMARY_KEY_QUERY;
     const FIND_BY_PARTITION_KEY_QUERY: &'static str = UserRow::FIND_BY_PRIMARY_KEY_QUERY;
 
-    fn primary_key_values(&self) -> (Uuid,) { (self.user_id,) }
-    fn partition_key_values(&self) -> (Uuid,) { (self.user_id,) }
+    fn primary_key_values(&self) -> (Uuid,) {
+        (self.user_id,)
+    }
+    fn partition_key_values(&self) -> (Uuid,) {
+        (self.user_id,)
+    }
 }
 
 impl Model for UserRow {
@@ -118,4 +121,3 @@ impl Model for UserRow {
     const DELETE_QUERY: &'static str = UserRow::DELETE_QUERY;
     const DELETE_BY_PARTITION_KEY_QUERY: &'static str = UserRow::DELETE_QUERY;
 }
-

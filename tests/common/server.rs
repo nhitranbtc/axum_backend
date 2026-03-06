@@ -15,6 +15,7 @@ use crate::common::mock::MockScylla;
 static PROMETHEUS_COMPONENTS: OnceLock<(PrometheusMetricLayer<'static>, PrometheusHandle)> =
     OnceLock::new();
 use axum_backend::config::scylla::ScyllaConfig;
+use axum_backend::infrastructure::database::DbPool;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ pub struct TestServer {
     pub addr: SocketAddr,
     pub client: Client,
     pub base_url: String,
+    pub pool: DbPool,
     pub _mock_db: Option<MockScylla>,
 }
 
@@ -98,7 +100,7 @@ impl TestServer {
                 .expect("Failed to create test NATS client");
 
         let app = create_router(
-            pool,
+            pool.clone(),
             jwt_secret,
             JWT_ACCESS_EXPIRY_SECS,
             JWT_REFRESH_EXPIRY_SECS,
@@ -113,8 +115,7 @@ impl TestServer {
         )
         .await;
 
-        let listener =
-            TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind test server");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind test server");
         let addr = listener.local_addr().expect("Failed to get local address");
         let base_url = format!("http://{}", addr);
 
@@ -132,6 +133,7 @@ impl TestServer {
                 .build()
                 .expect("Failed to build test client"),
             base_url,
+            pool,
             _mock_db: Some(mock_db),
         }
     }
@@ -159,12 +161,33 @@ impl TestServer {
     /// The `MockScylla` node stores the code in the DB exactly as the
     /// production server does — but reading it back requires a live CQL query.
     ///
-    /// # Current limitation
-    /// This stub returns the fixed value `"123456"`.  Tests that exercise a
-    /// *real* code (e.g. `test_forgot_password_flow`) must go through an
-    /// integration fixture that can query the ephemeral ScyllaDB directly.
-    pub async fn get_confirmation_code(&self, _email: &str) -> String {
-        "123456".to_string()
+    pub async fn get_confirmation_code(&self, email: &str) -> String {
+        let query = "SELECT confirmation_code FROM users WHERE email = ? ALLOW FILTERING";
+        let values = (email,);
+
+        let result = self
+            .pool
+            .session()
+            .execute_unpaged(query, values)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to query confirmation code for {email}: {e}"));
+
+        let rows_result = result
+            .into_rows_result()
+            .unwrap_or_else(|e| panic!("Failed to decode confirmation code rows for {email}: {e}"));
+
+        let mut rows = rows_result
+            .rows::<(Option<String>,)>()
+            .unwrap_or_else(|e| panic!("Failed to parse confirmation code row for {email}: {e}"));
+
+        let code = rows
+            .next()
+            .unwrap_or_else(|| panic!("No user row found for email {email}"))
+            .unwrap_or_else(|e| panic!("Failed to read confirmation code row for {email}: {e}"))
+            .0
+            .unwrap_or_else(|| panic!("Confirmation code is NULL for email {email}"));
+
+        code
     }
 
     /// `POST /api/auth/verify` — verify an email with its confirmation code.
@@ -178,9 +201,7 @@ impl TestServer {
 
     /// `POST /api/auth/forgot-password` — request a new confirmation code.
     pub async fn forgot_password(&self, email: &str) -> Value {
-        let res = self
-            .post_json("/api/auth/forgot-password", json!({ "email": email }))
-            .await;
+        let res = self.post_json("/api/auth/forgot-password", json!({ "email": email })).await;
         assert_success(&res);
         res
     }

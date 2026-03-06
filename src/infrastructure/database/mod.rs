@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 // Re-export commonly used items
 pub use scylla::{
-    create_scylla_session, AuthRepositoryImpl, EventRepository, RefreshTokenRow, ScyllaSession,
-    SessionRepository, UserEventRow, UserRepositoryImpl, UserRow, UserSessionRow,
+    create_scylla_session, AuthRepositoryImpl, EventRepository, PostRepositoryImpl, PostRow,
+    RefreshTokenRow, ScyllaSession, SessionRepository, UserEventRow, UserRepositoryImpl, UserRow,
+    UserSessionRow,
 };
 
 // Type alias so upstream code can refer to the session as `DbPool`.
 // Using Arc<ScyllaSession> so DbPool::clone() is cheap and repo ::new(pool) calls resolve.
 pub type DbPool = Arc<ScyllaSession>;
-

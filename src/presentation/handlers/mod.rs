@@ -7,10 +7,12 @@
 /// - Formatting HTTP responses
 pub mod auth;
 pub mod monitoring;
+pub mod post;
 pub mod role;
 pub mod user;
 
 // Re-export handler functions for convenience
+pub use post::{create_post, delete_post, get_post, list_posts, update_post};
 pub use role::{get_user_role, update_user_role};
 pub use user::{create_user, delete_user, get_user, import_users, list_users, update_user};
 

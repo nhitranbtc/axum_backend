@@ -1,5 +1,6 @@
 use crate::application::dto::{
     auth::{AuthResponse, RegisterResponse},
+    post::{PostListResponseDto, PostResponseDto},
     user::UserResponseDto,
 };
 use axum::{
@@ -46,6 +47,20 @@ pub struct UserResponseWrapper {
 pub struct UserListResponseWrapper {
     pub success: bool,
     pub data: Option<Vec<UserResponseDto>>,
+    pub error: Option<String>,
+}
+
+#[derive(ToSchema)]
+pub struct PostResponseWrapper {
+    pub success: bool,
+    pub data: Option<PostResponseDto>,
+    pub error: Option<String>,
+}
+
+#[derive(ToSchema)]
+pub struct PostListResponseWrapper {
+    pub success: bool,
+    pub data: Option<PostListResponseDto>,
     pub error: Option<String>,
 }
 

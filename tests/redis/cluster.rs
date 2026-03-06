@@ -34,7 +34,10 @@ async fn operations_cluster() {
     assert_eq!(value, Some("cluster_value".to_string()));
 
     // Test Delete
-    repository.delete("cluster_key").await.expect("Failed to delete key from cluster");
+    repository
+        .delete("cluster_key")
+        .await
+        .expect("Failed to delete key from cluster");
     let value = repository.get("cluster_key").await.expect("Failed to get key after delete");
     assert_eq!(value, None);
 }

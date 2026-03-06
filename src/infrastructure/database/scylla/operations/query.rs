@@ -82,10 +82,10 @@ impl<M: BaseModel + Send + Sync + 'static> QueryExecutor<M> for RowResult {
                 FirstRowError::RowsEmpty => DbError::NotFoundError(query.query_string),
                 FirstRowError::DeserializationFailed(de) => {
                     DbError::DeserializationError(query.query_string, Box::new(de))
-                }
+                },
                 FirstRowError::TypeCheckFailed(te) => {
                     DbError::DeserializationError(query.query_string, Box::new(te))
-                }
+                },
             })
         }
     }
@@ -113,10 +113,10 @@ impl<M: BaseModel + Send + Sync + 'static> QueryExecutor<M> for OptionalRow {
                 Err(FirstRowError::RowsEmpty) => Ok(None),
                 Err(FirstRowError::DeserializationFailed(de)) => {
                     Err(DbError::DeserializationError(query.query_string, Box::new(de)))
-                }
+                },
                 Err(FirstRowError::TypeCheckFailed(te)) => {
                     Err(DbError::DeserializationError(query.query_string, Box::new(te)))
-                }
+                },
             }
         }
     }
@@ -146,9 +146,7 @@ impl<M: BaseModel + Send + Sync + 'static> QueryExecutor<M> for Stream {
             futures::pin_mut!(typed_stream);
             let mut results = Vec::new();
             while let Some(item) = typed_stream.next().await {
-                results.push(
-                    item.map_err(|e| DbError::DeserializationError(qs, Box::new(e)))?,
-                );
+                results.push(item.map_err(|e| DbError::DeserializationError(qs, Box::new(e)))?);
             }
             Ok(results)
         }
@@ -172,9 +170,8 @@ impl<M: BaseModel + Send + Sync + 'static> QueryExecutor<M> for Paged {
                 .await
                 .map_err(|e| DbError::ExecutionError(qs, e))?;
 
-            let rows_result = result
-                .into_rows_result()
-                .map_err(|e| DbError::IntoRowsResultError(qs, e))?;
+            let rows_result =
+                result.into_rows_result().map_err(|e| DbError::IntoRowsResultError(qs, e))?;
 
             let models: Result<Vec<M>, DbError> = rows_result
                 .rows::<M>()

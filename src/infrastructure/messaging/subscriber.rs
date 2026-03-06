@@ -10,12 +10,12 @@ where
     P: EventProcessor,
 {
     info!("Starting subscription handler for {}", processor.event_name());
-    
+
     while let Some(message) = subscriber.next().await {
         match P::Event::from_bytes(&message.payload) {
             Ok(event) => {
                 processor.process(event).await;
-            }
+            },
             Err(e) => {
                 error!(
                     "Failed to deserialize {} from subject {}: {:?}",
@@ -23,10 +23,10 @@ where
                     message.subject,
                     e
                 );
-            }
+            },
         }
     }
-    
+
     info!("Subscription handler for {} ended", processor.event_name());
 }
 
@@ -36,17 +36,16 @@ pub async fn handle_wildcard_subscription<P1, P2, P3>(
     created_processor: P1,
     updated_processor: P2,
     deleted_processor: P3,
-)
-where
+) where
     P1: EventProcessor,
     P2: EventProcessor,
     P3: EventProcessor,
 {
     info!("Starting wildcard subscription handler");
-    
+
     while let Some(message) = subscriber.next().await {
         let subject = message.subject.to_string();
-        
+
         if subject.ends_with(".created") {
             if let Ok(event) = P1::Event::from_bytes(&message.payload) {
                 created_processor.process(event).await;
@@ -69,6 +68,6 @@ where
             error!("Unknown event type from subject: {}", subject);
         }
     }
-    
+
     info!("Wildcard subscription handler ended");
 }

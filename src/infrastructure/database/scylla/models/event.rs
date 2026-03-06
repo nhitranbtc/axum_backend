@@ -7,9 +7,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone, SerializeRow, DeserializeRow)]
 pub struct UserEventRow {
     pub user_id: Uuid,
-    pub event_id: Uuid,        // UUID v4 — doubles as a unique row key
+    pub event_id: Uuid, // UUID v4 — doubles as a unique row key
     pub event_type: String,
-    pub event_data: String,    // JSON-serialised event payload
+    pub event_data: String, // JSON-serialised event payload
     pub created_at: CqlTimestamp,
 }
 
@@ -54,8 +54,12 @@ impl BaseModel for UserEventRow {
         "SELECT user_id, event_id, event_type, event_data, created_at \
          FROM user_events WHERE user_id = ?";
 
-    fn primary_key_values(&self) -> (Uuid, Uuid) { (self.user_id, self.event_id) }
-    fn partition_key_values(&self) -> (Uuid,) { (self.user_id,) }
+    fn primary_key_values(&self) -> (Uuid, Uuid) {
+        (self.user_id, self.event_id)
+    }
+    fn partition_key_values(&self) -> (Uuid,) {
+        (self.user_id,)
+    }
 }
 
 impl Model for UserEventRow {
@@ -63,12 +67,8 @@ impl Model for UserEventRow {
     const INSERT_IF_NOT_EXISTS_QUERY: &'static str =
         "INSERT INTO user_events (user_id, event_id, event_type, event_data, created_at) \
          VALUES (?, ?, ?, ?, ?) IF NOT EXISTS";
-    const UPDATE_QUERY: &'static str =
-        "UPDATE user_events SET event_type = ?, event_data = ? \
+    const UPDATE_QUERY: &'static str = "UPDATE user_events SET event_type = ?, event_data = ? \
          WHERE user_id = ? AND event_id = ?";
-    const DELETE_QUERY: &'static str =
-        "DELETE FROM user_events WHERE user_id = ? AND event_id = ?";
-    const DELETE_BY_PARTITION_KEY_QUERY: &'static str =
-        "DELETE FROM user_events WHERE user_id = ?";
+    const DELETE_QUERY: &'static str = "DELETE FROM user_events WHERE user_id = ? AND event_id = ?";
+    const DELETE_BY_PARTITION_KEY_QUERY: &'static str = "DELETE FROM user_events WHERE user_id = ?";
 }
-

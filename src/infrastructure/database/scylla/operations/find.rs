@@ -2,7 +2,7 @@ use scylla::response::PagingState;
 use scylla::serialize::row::SerializeRow;
 
 use super::model::BaseModel;
-use super::query::{OptionalRow, Paged, RowResult, ScyllaQuery, Stream, QueryValue};
+use super::query::{OptionalRow, Paged, QueryValue, RowResult, ScyllaQuery, Stream};
 
 /// Find operations for any `BaseModel`.
 ///
@@ -108,9 +108,7 @@ where
     }
 
     /// Same as above but returns `Option<Self>`.
-    fn maybe_find_by_primary_key(
-        &self,
-    ) -> ScyllaQuery<'_, Self::PrimaryKey, Self, OptionalRow> {
+    fn maybe_find_by_primary_key(&self) -> ScyllaQuery<'_, Self::PrimaryKey, Self, OptionalRow> {
         ScyllaQuery::new(
             Self::FIND_BY_PRIMARY_KEY_QUERY,
             QueryValue::Owned(self.primary_key_values()),

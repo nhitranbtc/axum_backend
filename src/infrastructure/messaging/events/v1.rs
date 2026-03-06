@@ -15,12 +15,7 @@ pub struct UserCreatedEventV1 {
 
 impl UserCreatedEventV1 {
     pub fn new(user_id: String, email: String, name: String) -> Self {
-        Self {
-            user_id,
-            email,
-            name,
-            created_at: Utc::now(),
-        }
+        Self { user_id, email, name, created_at: Utc::now() }
     }
 }
 
@@ -39,12 +34,7 @@ pub struct UserUpdatedEventV1 {
 
 impl UserUpdatedEventV1 {
     pub fn new(user_id: String, name: Option<String>, email: Option<String>) -> Self {
-        Self {
-            user_id,
-            name,
-            email,
-            updated_at: Utc::now(),
-        }
+        Self { user_id, name, email, updated_at: Utc::now() }
     }
 }
 
@@ -61,10 +51,7 @@ pub struct UserDeletedEventV1 {
 
 impl UserDeletedEventV1 {
     pub fn new(user_id: String) -> Self {
-        Self {
-            user_id,
-            deleted_at: Utc::now(),
-        }
+        Self { user_id, deleted_at: Utc::now() }
     }
 }
 
@@ -93,11 +80,8 @@ mod tests {
 
     #[test]
     fn test_user_updated_event_v1_serialization() {
-        let event = UserUpdatedEventV1::new(
-            "user-123".to_string(),
-            Some("Jane Doe".to_string()),
-            None,
-        );
+        let event =
+            UserUpdatedEventV1::new("user-123".to_string(), Some("Jane Doe".to_string()), None);
 
         let bytes = event.to_bytes().unwrap();
         let deserialized = UserUpdatedEventV1::from_bytes(&bytes).unwrap();

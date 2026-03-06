@@ -46,10 +46,8 @@ impl ScyllaSession {
 
         builder = builder.default_execution_profile_handle(profile.into_handle());
 
-        let raw_session: Session = builder
-            .build()
-            .await
-            .context("Failed to connect to ScyllaDB")?;
+        let raw_session: Session =
+            builder.build().await.context("Failed to connect to ScyllaDB")?;
 
         info!("Successfully connected to ScyllaDB");
 
@@ -185,11 +183,78 @@ impl ScyllaSession {
             &[],
         );
 
+        s.execute_unpaged("DROP TABLE IF EXISTS posts", &[])
+            .await
+            .context("Failed to drop posts")?;
+
+        let create_posts = s.execute_unpaged(
+            "CREATE TABLE IF NOT EXISTS posts (\
+                post_id    UUID PRIMARY KEY,\
+                author_id  UUID,\
+                title      TEXT,\
+                slug       TEXT,\
+                content    TEXT,\
+                status     TEXT,\
+                tags       LIST<TEXT>,\
+                published_at TIMESTAMP,\
+                deleted_at TIMESTAMP,\
+                created_at TIMESTAMP,\
+                updated_at TIMESTAMP\
+            )",
+            &[],
+        );
+
+        let create_posts_by_slug = s.execute_unpaged(
+            "CREATE TABLE IF NOT EXISTS posts_by_slug (\
+                slug       TEXT PRIMARY KEY,\
+                post_id    UUID,\
+                author_id  UUID,\
+                status     TEXT,\
+                created_at TIMESTAMP\
+            )",
+            &[],
+        );
+
+        let create_posts_by_author = s.execute_unpaged(
+            "CREATE TABLE IF NOT EXISTS posts_by_author (\
+                author_id  UUID,\
+                created_at TIMESTAMP,\
+                post_id    UUID,\
+                title      TEXT,\
+                slug       TEXT,\
+                status     TEXT,\
+                tags       LIST<TEXT>,\
+                deleted_at TIMESTAMP,\
+                PRIMARY KEY ((author_id), created_at, post_id)\
+            ) WITH CLUSTERING ORDER BY (created_at DESC, post_id DESC)",
+            &[],
+        );
+
+        let create_posts_feed_by_day = s.execute_unpaged(
+            "CREATE TABLE IF NOT EXISTS posts_feed_by_day (\
+                bucket_date TEXT,\
+                created_at  TIMESTAMP,\
+                post_id     UUID,\
+                author_id   UUID,\
+                title       TEXT,\
+                slug        TEXT,\
+                status      TEXT,\
+                tags        LIST<TEXT>,\
+                deleted_at  TIMESTAMP,\
+                PRIMARY KEY ((bucket_date), created_at, post_id)\
+            ) WITH CLUSTERING ORDER BY (created_at DESC, post_id DESC)",
+            &[],
+        );
+
         tokio::try_join!(
             create_users,
             create_refresh_tokens,
             create_user_sessions,
             create_user_events,
+            create_posts,
+            create_posts_by_slug,
+            create_posts_by_author,
+            create_posts_feed_by_day,
         )
         .context("Failed to create tables")?;
 
@@ -212,8 +277,13 @@ impl ScyllaSession {
         tokio::try_join!(
             s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON user_sessions (user_id)", &[]),
             s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON user_sessions (expires_at)", &[]),
+            s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON posts (author_id)", &[]),
+            s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON posts (slug)", &[]),
+            s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON posts (status)", &[]),
+            s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON posts_by_author (status)", &[]),
+            s.execute_unpaged("CREATE INDEX IF NOT EXISTS ON posts_feed_by_day (status)", &[]),
         )
-        .context("Failed to create user_sessions indexes")?;
+        .context("Failed to create secondary indexes")?;
 
         info!("All indexes created");
         Ok(())

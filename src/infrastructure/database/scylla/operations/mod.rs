@@ -66,6 +66,8 @@ pub mod prelude {
     pub use super::find::Find;
     pub use super::insert::Insert;
     pub use super::model::{BaseModel, Model};
-    pub use super::query::{Mutation, OptionalRow, Paged, QueryValue, RowResult, ScyllaQuery, Stream};
+    pub use super::query::{
+        Mutation, OptionalRow, Paged, QueryValue, RowResult, ScyllaQuery, Stream,
+    };
     pub use super::update::Update;
 }

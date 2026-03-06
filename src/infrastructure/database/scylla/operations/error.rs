@@ -10,10 +10,7 @@ pub enum DbError {
     ExecutionError(&'static str, #[source] ExecutionError),
 
     #[error("Query `{0}` pager execution failed: {1}")]
-    PagerExecutionError(
-        &'static str,
-        #[source] Box<dyn std::error::Error + Send + Sync>,
-    ),
+    PagerExecutionError(&'static str, #[source] Box<dyn std::error::Error + Send + Sync>),
 
     #[error("Query `{0}` into_rows_result failed: {1}")]
     IntoRowsResultError(&'static str, #[source] IntoRowsResultError),
@@ -22,10 +19,7 @@ pub enum DbError {
     RowsError(&'static str, #[source] RowsError),
 
     #[error("Query `{0}` first_row deserialization failed: {1}")]
-    DeserializationError(
-        &'static str,
-        #[source] Box<dyn std::error::Error + Send + Sync>,
-    ),
+    DeserializationError(&'static str, #[source] Box<dyn std::error::Error + Send + Sync>),
 
     #[error("Query `{0}` returned no rows (expected at least one)")]
     NotFoundError(&'static str),

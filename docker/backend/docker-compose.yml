@@ -57,11 +57,11 @@ services:
     env_file:
       - ../../.env
     environment:
-      # Override with Docker service names (ignores any localhost values in .env)
+      # Override with Docker service names (ignores localhost values in .env).
+      # SCYLLA_NODES_DOCKER is set by run_container.sh based on --single/--cluster.
       - REDIS_URL=redis://redis:6379
       - NATS_URL=nats://nats:4222
-      # SCYLLA_NODES and SCYLLA_REPLICATION_FACTOR are inherited from .env
-      # (must be set correctly in .env depending on single/cluster mode)
+      - SCYLLA_NODES=${SCYLLA_NODES_DOCKER}
     depends_on:
       redis:
         condition: service_started

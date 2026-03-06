@@ -1,4 +1,4 @@
-use chrono::Utc;
+// Removed unused import
 use std::env;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -8,8 +8,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // 1. Initialize logging
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -24,7 +23,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // 3. Configure connection options
     let mut options = async_nats::ConnectOptions::new();
-    
+
     if let (Some(user), Some(pass)) = (nats_user, nats_password) {
         info!("Using username/password authentication");
         options = options.user_and_password(user, pass);
@@ -41,7 +40,7 @@ async fn main() -> Result<(), anyhow::Error> {
         Err(e) => {
             error!("Failed to connect to NATS: {}", e);
             return Err(e.into());
-        }
+        },
     };
     info!("Connected successfully!");
 

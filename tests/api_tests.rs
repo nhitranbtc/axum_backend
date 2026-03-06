@@ -5,5 +5,6 @@ mod api {
     pub mod cookie_auth;
     pub mod health;
     pub mod monitoring;
+    pub mod post;
     pub mod preflight;
 }

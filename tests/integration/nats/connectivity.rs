@@ -1,9 +1,9 @@
 use axum_backend::infrastructure::messaging::{MessagingService, NatsClient};
 use bytes::Bytes;
+use futures::StreamExt;
 use std::time::Duration;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::time::timeout;
-use futures::StreamExt;
 
 #[tokio::test]
 async fn test_nats_pub_sub() {
@@ -38,7 +38,10 @@ async fn test_nats_pub_sub() {
     let mut subscriber = client.subscribe(subject.to_string()).await.expect("Failed to subscribe");
 
     // Publish
-    client.publish(subject.to_string(), payload.clone()).await.expect("Failed to publish");
+    client
+        .publish(subject.to_string(), payload.clone())
+        .await
+        .expect("Failed to publish");
 
     // Receive
     let message = timeout(Duration::from_secs(5), subscriber.next())

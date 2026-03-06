@@ -1,7 +1,7 @@
 use scylla::serialize::row::SerializeRow;
 
 use super::model::Model;
-use super::query::{Mutation, ScyllaQuery, QueryValue};
+use super::query::{Mutation, QueryValue, ScyllaQuery};
 
 /// DELETE operations for any `Model`.
 ///
@@ -21,13 +21,13 @@ use super::query::{Mutation, ScyllaQuery, QueryValue};
 /// UserRow::delete_by_query("DELETE FROM users WHERE user_id = ?", (id,))
 ///     .execute(&session).await?;
 /// ```
-pub trait Delete: Model where Self: 'static {
+pub trait Delete: Model
+where
+    Self: 'static,
+{
     /// Delete this row by its full primary key (partition + clustering).
     fn delete(&self) -> ScyllaQuery<'_, Self::PrimaryKey, Self, Mutation> {
-        ScyllaQuery::new(
-            Self::DELETE_QUERY,
-            QueryValue::Owned(self.primary_key_values()),
-        )
+        ScyllaQuery::new(Self::DELETE_QUERY, QueryValue::Owned(self.primary_key_values()))
     }
 
     /// Delete **all** rows that share this row's partition key.

@@ -5,9 +5,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::infrastructure::database::scylla::{
-    connection::ScyllaSession,
-    models::UserSessionRow,
-    operations::prelude::*,
+    connection::ScyllaSession, models::UserSessionRow, operations::prelude::*,
 };
 
 /// Repository for managing user sessions in ScyllaDB.
@@ -26,10 +24,7 @@ impl SessionRepository {
     pub async fn save_session(&self, row: &UserSessionRow) -> Result<()> {
         debug!("Saving session {} for user {}", row.session_id, row.user_id);
 
-        row.insert()
-            .execute(&self.session)
-            .await
-            .context("Failed to insert session")?;
+        row.insert().execute(&self.session).await.context("Failed to insert session")?;
 
         info!("Session saved: {} for user {}", row.session_id, row.user_id);
         Ok(())

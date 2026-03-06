@@ -5,9 +5,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::infrastructure::database::scylla::{
-    connection::ScyllaSession,
-    models::UserEventRow,
-    operations::prelude::*,
+    connection::ScyllaSession, models::UserEventRow, operations::prelude::*,
 };
 
 /// Repository for managing user events in ScyllaDB (time-series data).
@@ -26,10 +24,7 @@ impl EventRepository {
     pub async fn save_event(&self, event: &UserEventRow) -> Result<()> {
         debug!("Saving event '{}' for user {}", event.event_type, event.user_id);
 
-        event.insert()
-            .execute(&self.session)
-            .await
-            .context("Failed to insert event")?;
+        event.insert().execute(&self.session).await.context("Failed to insert event")?;
 
         info!("Event '{}' saved for user {}", event.event_type, event.user_id);
         Ok(())
@@ -45,9 +40,7 @@ impl EventRepository {
             .into_rows_result()
             .context("Failed to read event COUNT result")?;
 
-        let (count,): (i64,) = result
-            .first_row()
-            .context("No COUNT result row")?;
+        let (count,): (i64,) = result.first_row().context("No COUNT result row")?;
 
         Ok(count)
     }

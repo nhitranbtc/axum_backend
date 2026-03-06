@@ -10,9 +10,7 @@ use crate::domain::{
     value_objects::{Email, UserId, UserRole},
 };
 use crate::infrastructure::database::scylla::{
-    connection::ScyllaSession,
-    models::UserRow,
-    operations::prelude::*,
+    connection::ScyllaSession, models::UserRow, operations::prelude::*,
 };
 
 /// ScyllaDB implementation of [`UserRepository`].
@@ -73,10 +71,7 @@ impl RepositoryImpl {
             updated_at: UserRow::ts(user.updated_at),
         };
 
-        row.insert()
-            .execute(&self.session)
-            .await
-            .map_err(Self::db_err)?;
+        row.insert().execute(&self.session).await.map_err(Self::db_err)?;
         Ok(())
     }
 
@@ -111,18 +106,12 @@ impl UserRepository for RepositoryImpl {
 
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError> {
         debug!("UserRepo::find_by_id {}", id.as_uuid());
-        self.fetch_by_id(*id.as_uuid())
-            .await?
-            .map(Self::row_to_entity)
-            .transpose()
+        self.fetch_by_id(*id.as_uuid()).await?.map(Self::row_to_entity).transpose()
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>, RepositoryError> {
         debug!("UserRepo::find_by_email {}", email.as_str());
-        self.fetch_by_email(email.as_str())
-            .await?
-            .map(Self::row_to_entity)
-            .transpose()
+        self.fetch_by_email(email.as_str()).await?.map(Self::row_to_entity).transpose()
     }
 
     async fn exists_by_email(&self, email: &Email) -> Result<bool, RepositoryError> {
@@ -138,25 +127,27 @@ impl UserRepository for RepositoryImpl {
             .into_rows_result()
             .map_err(|e| RepositoryError::Internal(e.to_string()))?;
 
-        let (count,): (i64,) = result
-            .first_row()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
+        let (count,): (i64,) =
+            result.first_row().map_err(|e| RepositoryError::Internal(e.to_string()))?;
         Ok(count)
     }
 
-    async fn list_paginated(
-        &self,
-        limit: i64,
-        _offset: i64,
-    ) -> Result<Vec<User>, RepositoryError> {
-        // ScyllaDB uses paging state, not OFFSET. A simple LIMIT is used here;
-        // callers needing cursor pagination should use execute_single_page directly.
-        let rows = UserRow::find(UserRow::FIND_ALL_QUERY, (limit as i32,))
+    async fn list_paginated(&self, limit: i64, offset: i64) -> Result<Vec<User>, RepositoryError> {
+        // ScyllaDB uses paging state, not OFFSET.
+        // For backward-compatible page/page_size APIs, fetch (offset + limit)
+        // and slice in-memory.
+        let fetch_limit = (limit + offset).max(limit).max(1);
+        let rows = UserRow::find(UserRow::FIND_ALL_QUERY, (fetch_limit as i32,))
             .execute(&self.session)
             .await
             .map_err(Self::db_err)?;
 
-        Ok(rows.into_iter().flat_map(Self::row_to_entity).collect())
+        let users: Vec<User> = rows.into_iter().flat_map(Self::row_to_entity).collect();
+        Ok(users
+            .into_iter()
+            .skip(offset.max(0) as usize)
+            .take(limit.max(0) as usize)
+            .collect())
     }
 
     async fn delete(&self, id: UserId) -> Result<bool, RepositoryError> {

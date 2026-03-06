@@ -38,9 +38,8 @@ impl RepositoryImpl {
     fn user_row_to_entity(row: UserRow) -> Result<User, AuthRepositoryError> {
         Ok(User::from_existing(
             UserId::from_uuid(row.user_id),
-            Email::parse(&row.email).unwrap_or_else(|_| {
-                panic!("Invalid email stored in database: {}", row.email)
-            }),
+            Email::parse(&row.email)
+                .unwrap_or_else(|_| panic!("Invalid email stored in database: {}", row.email)),
             row.name,
             row.password_hash,
             UserRole::parse(&row.role).unwrap_or_default(),
@@ -54,10 +53,7 @@ impl RepositoryImpl {
         ))
     }
 
-    async fn query_user_by_email(
-        &self,
-        email: &str,
-    ) -> Result<Option<User>, AuthRepositoryError> {
+    async fn query_user_by_email(&self, email: &str) -> Result<Option<User>, AuthRepositoryError> {
         UserRow::maybe_find_first(UserRow::FIND_BY_EMAIL_QUERY, (email,))
             .execute(&self.session)
             .await
@@ -88,10 +84,7 @@ impl RepositoryImpl {
 
 #[async_trait]
 impl AuthRepository for RepositoryImpl {
-    async fn find_by_email(
-        &self,
-        email: &str,
-    ) -> Result<Option<User>, AuthRepositoryError> {
+    async fn find_by_email(&self, email: &str) -> Result<Option<User>, AuthRepositoryError> {
         debug!("AuthRepo::find_by_email {}", email);
         self.query_user_by_email(email).await
     }
@@ -186,10 +179,7 @@ impl AuthRepository for RepositoryImpl {
         Ok(updated)
     }
 
-    async fn save_refresh_token(
-        &self,
-        token: &RefreshToken,
-    ) -> Result<(), AuthRepositoryError> {
+    async fn save_refresh_token(&self, token: &RefreshToken) -> Result<(), AuthRepositoryError> {
         debug!("AuthRepo::save_refresh_token for user {}", token.user_id);
         let row = RefreshTokenRow {
             token_hash: token.token_hash.clone(),
@@ -210,16 +200,13 @@ impl AuthRepository for RepositoryImpl {
         self.query_token_by_hash(token_hash).await
     }
 
-    async fn revoke_refresh_token(
-        &self,
-        token_hash: &str,
-    ) -> Result<(), AuthRepositoryError> {
+    async fn revoke_refresh_token(&self, token_hash: &str) -> Result<(), AuthRepositoryError> {
         debug!("AuthRepo::revoke_refresh_token");
         match self.query_token_by_hash(token_hash).await? {
             None | Some(RefreshToken { revoked_at: Some(_), .. }) => {
                 return Err(AuthRepositoryError::TokenNotFound)
-            }
-            _ => {}
+            },
+            _ => {},
         }
         execute_unpaged(
             &self.session,
@@ -234,15 +221,12 @@ impl AuthRepository for RepositoryImpl {
     async fn revoke_all_user_tokens(&self, user_id: Uuid) -> Result<(), AuthRepositoryError> {
         debug!("AuthRepo::revoke_all_user_tokens {}", user_id);
 
-        let result = execute_unpaged(
-            &self.session,
-            RefreshTokenRow::FIND_HASHES_BY_USER_QUERY,
-            (user_id,)
-        )
-        .await
-        .map_err(Self::db_err)?
-        .into_rows_result()
-        .map_err(|e| AuthRepositoryError::DatabaseError(e.to_string()))?;
+        let result =
+            execute_unpaged(&self.session, RefreshTokenRow::FIND_HASHES_BY_USER_QUERY, (user_id,))
+                .await
+                .map_err(Self::db_err)?
+                .into_rows_result()
+                .map_err(|e| AuthRepositoryError::DatabaseError(e.to_string()))?;
 
         let now_ts = RefreshTokenRow::ts(chrono::Utc::now());
 
@@ -251,13 +235,9 @@ impl AuthRepository for RepositoryImpl {
             .map_err(|e| AuthRepositoryError::DatabaseError(e.to_string()))?
         {
             let (hash,) = row.map_err(|e| AuthRepositoryError::DatabaseError(e.to_string()))?;
-            execute_unpaged(
-                &self.session,
-                RefreshTokenRow::REVOKE_QUERY,
-                (now_ts, hash.as_str())
-            )
-            .await
-            .map_err(Self::db_err)?;
+            execute_unpaged(&self.session, RefreshTokenRow::REVOKE_QUERY, (now_ts, hash.as_str()))
+                .await
+                .map_err(Self::db_err)?;
         }
         Ok(())
     }

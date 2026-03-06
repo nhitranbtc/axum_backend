@@ -64,7 +64,6 @@ impl Clone for ServiceRegistry {
 #[cfg(test)]
 mod tests {
 
-
     // Note: Integration tests would require a test database
     #[test]
     fn test_service_registry_creation() {

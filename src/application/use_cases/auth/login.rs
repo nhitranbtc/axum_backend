@@ -54,7 +54,8 @@ impl<R: AuthRepository> LoginUseCase<R> {
 
         let mut credentials_valid = false;
 
-        // Check Code
+        // Prefer code validation if provided.
+        // If code is invalid, fall back to password when available.
         if let Some(c) = code {
             if let Some(user_code) = &user.confirmation_code {
                 if user_code == &c {
@@ -74,11 +75,13 @@ impl<R: AuthRepository> LoginUseCase<R> {
                 }
             }
         }
-        // Check Password if code didn't validate (or wasn't provided)
-        else if let Some(p) = password {
-            if let Some(hash) = &user.password_hash {
-                if PasswordManager::verify(&p, hash).unwrap_or(false) {
-                    credentials_valid = true;
+
+        if !credentials_valid {
+            if let Some(p) = password {
+                if let Some(hash) = &user.password_hash {
+                    if PasswordManager::verify(&p, hash).unwrap_or(false) {
+                        credentials_valid = true;
+                    }
                 }
             }
         }

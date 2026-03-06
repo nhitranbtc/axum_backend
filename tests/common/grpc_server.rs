@@ -1,3 +1,4 @@
+use axum_backend::config::scylla::ScyllaConfig;
 use axum_backend::{
     grpc::{
         presentation::services::user_service::UserServiceImpl,
@@ -5,7 +6,6 @@ use axum_backend::{
     },
     infrastructure::database::{create_scylla_session, DbPool},
 };
-use axum_backend::config::scylla::ScyllaConfig;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tonic::transport::{Channel, Server};
@@ -23,7 +23,7 @@ impl TestGrpcServer {
         // 1. Setup Mock DB (Reuse logic from common::server, but stripped down)
         // Or reuse MockPostgres directly
         let mock_db = MockScylla::new().await;
-        
+
         let scylla_config = ScyllaConfig {
             nodes: vec![mock_db.contact_node.clone()],
             keyspace: format!("test_keyspace_{}", uuid::Uuid::new_v4().simple()),

@@ -62,7 +62,8 @@ Options:
   --cluster  Use 3-node ScyllaDB cluster (docker/scylla-cluster) [default]
   --clean    Drop ScyllaDB keyspace and flush Redis before starting
   --build    Force rebuild of the backend image  (implies --clean)
-  --stop     Stop and remove all containers
+  --stop     Stop all containers (without removing them)
+  --restart  Stop all containers then redeploy  (combinable with --single/--cluster)
   --remove   Stop containers, remove volumes, and delete locally built images
   --test     Run the full API smoke test (register → verify → login)
   --help     Show this help message
@@ -173,9 +174,20 @@ register_scylla_manager() {
 action_stop() {
     local scylla_compose="$1"
     log_info "Stopping all services..."
-    dc -f "${COMPOSE_FILE}" down --remove-orphans
-    dc -f "${scylla_compose}" down --remove-orphans
+    dc -f "${COMPOSE_FILE}" stop
+    dc -f "${scylla_compose}" stop
     log_success "Services stopped."
+}
+
+action_restart() {
+    local scylla_compose="$1" build_flag="$2"
+    log_info "Restarting all services..."
+    action_stop "${scylla_compose}"
+    if "${CLEAN_DB}"; then
+        action_clean_db "${scylla_compose}"
+    fi
+    action_deploy "${scylla_compose}" "${build_flag}"
+    log_success "Restart complete."
 }
 
 action_remove() {
@@ -343,6 +355,7 @@ run_smoke_test() {
 CLEAN_DB=false
 FORCE_BUILD=false
 STOP_ONLY=false
+RESTART=false
 REMOVE_ALL=false
 RUN_TEST=false
 TEST_ONLY=false
@@ -355,10 +368,11 @@ while [[ "$#" -gt 0 ]]; do
         --clean)   CLEAN_DB=true ;;
         --build)   FORCE_BUILD=true; CLEAN_DB=true ;;
         --stop)    STOP_ONLY=true ;;
+        --restart) RESTART=true ;;
         --remove)  REMOVE_ALL=true ;;
         --test)
             RUN_TEST=true
-            if ! "${CLEAN_DB}" && ! "${FORCE_BUILD}" && ! "${STOP_ONLY}" && ! "${REMOVE_ALL}"; then
+            if ! "${CLEAN_DB}" && ! "${FORCE_BUILD}" && ! "${STOP_ONLY}" && ! "${RESTART}" && ! "${REMOVE_ALL}"; then
                 TEST_ONLY=true
             fi
             ;;
@@ -372,9 +386,11 @@ done
 if [ "${SCYLLA_MODE}" = "single" ]; then
     SCYLLA_COMPOSE="${SCYLLA_SINGLE_COMPOSE}"
     OTHER_SCYLLA_COMPOSE="${SCYLLA_CLUSTER_COMPOSE}"
+    export SCYLLA_NODES_DOCKER="scylla1:9042"
 else
     SCYLLA_COMPOSE="${SCYLLA_CLUSTER_COMPOSE}"
     OTHER_SCYLLA_COMPOSE="${SCYLLA_SINGLE_COMPOSE}"
+    export SCYLLA_NODES_DOCKER="scylla1:9042,scylla2:9042,scylla3:9042"
 fi
 
 # ==============================================================================
@@ -396,6 +412,24 @@ stop_conflicting_scylla "${OTHER_SCYLLA_COMPOSE}"
 
 if "${STOP_ONLY}"; then
     action_stop "${SCYLLA_COMPOSE}"
+    exit 0
+fi
+
+if "${RESTART}"; then
+    BUILD_FLAG=""
+    "${FORCE_BUILD}" && BUILD_FLAG="--build"
+    action_restart "${SCYLLA_COMPOSE}" "${BUILD_FLAG}"
+    print_banner "🎉 Restart Complete"
+    cat <<EOF
+   Swagger UI : http://localhost:${BACKEND_PORT}/swagger-ui/
+   Health     : http://localhost:${BACKEND_PORT}/health
+   ScyllaDB   : localhost:9042
+   Redis      : localhost:6379
+   NATS       : localhost:4222
+   Logs       : docker logs -f ${BACKEND_CONTAINER}
+=============================================
+EOF
+    "${RUN_TEST}" && run_smoke_test
     exit 0
 fi
 

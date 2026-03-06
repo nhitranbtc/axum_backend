@@ -1,10 +1,6 @@
- use crate::{
+use crate::{
     application::dto::CreateUserDto,
-    domain::{
-        entities::User,
-        repositories::user_repository::UserRepository,
-        value_objects::Email,
-    },
+    domain::{entities::User, repositories::user_repository::UserRepository, value_objects::Email},
     infrastructure::cache::CacheRepository,
     shared::AppError,
 };
@@ -18,14 +14,8 @@ pub struct CreateUserUseCase<R: UserRepository, C: CacheRepository + ?Sized> {
 }
 
 impl<R: UserRepository, C: CacheRepository + ?Sized> CreateUserUseCase<R, C> {
-    pub fn new(
-        user_repository: Arc<R>,
-        _cache_repository: Arc<C>,
-    ) -> Self {
-        Self {
-            user_repository,
-            _cache_repository,
-        }
+    pub fn new(user_repository: Arc<R>, _cache_repository: Arc<C>) -> Self {
+        Self { user_repository, _cache_repository }
     }
 
     pub async fn execute(&self, dto: CreateUserDto) -> Result<User, AppError> {

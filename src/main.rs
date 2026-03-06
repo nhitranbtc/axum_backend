@@ -1,9 +1,7 @@
 use axum_backend::{
-    config::AppConfig,
-    infrastructure::cache::redis_cache::RedisCacheRepository,
+    config::AppConfig, infrastructure::cache::redis_cache::RedisCacheRepository,
     infrastructure::database::scylla::connection::create_scylla_session,
-    presentation::routes::create_router,
-    shared::init_telemetry,
+    presentation::routes::create_router, shared::init_telemetry,
 };
 use axum_prometheus::PrometheusMetricLayer;
 use std::net::SocketAddr;

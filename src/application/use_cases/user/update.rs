@@ -1,15 +1,13 @@
- use crate::infrastructure::cache::CacheRepository;
+use crate::infrastructure::cache::CacheRepository;
 use crate::{
     application::dto::UpdateUserDto,
     domain::{
-        entities::User,
-        repositories::user_repository::UserRepository, value_objects::UserId,
+        entities::User, repositories::user_repository::UserRepository, value_objects::UserId,
     },
     infrastructure::messaging::{
-        MessagingService,
-        NatsClient, 
-        events::{v2::UserUpdatedEventV2, traits::Event},
+        events::{traits::Event, v2::UserUpdatedEventV2},
         subjects::{SubjectVersion, UserEventType, UserSubject},
+        MessagingService, NatsClient,
     },
     shared::AppError,
 };
@@ -30,11 +28,7 @@ impl<R: UserRepository, C: CacheRepository + ?Sized> UpdateUserUseCase<R, C> {
         cache_repository: Arc<C>,
         nats_client: Arc<NatsClient>,
     ) -> Self {
-        Self {
-            user_repository,
-            cache_repository,
-            nats_client,
-        }
+        Self { user_repository, cache_repository, nats_client }
     }
 
     pub async fn execute(&self, user_id: &str, dto: UpdateUserDto) -> Result<User, AppError> {
@@ -88,10 +82,7 @@ impl<R: UserRepository, C: CacheRepository + ?Sized> UpdateUserUseCase<R, C> {
 
         // Track name change if it occurred
         if previous_name != user.name {
-            event = event.with_name_change(
-                Some(previous_name),
-                Some(user.name.clone()),
-            );
+            event = event.with_name_change(Some(previous_name), Some(user.name.clone()));
         }
 
         // Serialize event to bytes
@@ -100,7 +91,7 @@ impl<R: UserRepository, C: CacheRepository + ?Sized> UpdateUserUseCase<R, C> {
             Err(e) => {
                 tracing::error!("Failed to serialize UserUpdatedEventV2: {}", e);
                 return;
-            }
+            },
         };
 
         // Get environment name from env var or default to "dev"

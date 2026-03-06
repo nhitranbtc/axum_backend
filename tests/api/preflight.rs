@@ -1,8 +1,8 @@
 /// Pre-flight tests - Run these before starting the server
 /// These tests validate configuration, database, and core functionality
 use crate::common::*;
-use axum_backend::infrastructure::database::create_scylla_session;
 use axum_backend::config::scylla::ScyllaConfig;
+use axum_backend::infrastructure::database::create_scylla_session;
 use axum_backend::shared::utils::jwt::JwtManager;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ async fn check_database_connectivity() {
 
     // Standalone: Use Mock ScyllaDB
     let mock_db = crate::common::mock::MockScylla::new().await;
-    
+
     let scylla_config = ScyllaConfig {
         nodes: vec![mock_db.contact_node.clone()],
         keyspace: format!("test_keyspace_{}", uuid::Uuid::new_v4().simple()),
@@ -30,7 +30,7 @@ async fn check_database_connectivity() {
     assert!(session.is_ok(), "Failed to create ScyllaDB session: {:?}", session.err());
 
     let session = session.unwrap();
-    
+
     let health = session.health_check().await;
     assert!(health.is_ok(), "Failed to perform health check on ScyllaDB: {:?}", health.err());
 

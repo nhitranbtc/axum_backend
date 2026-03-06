@@ -1,5 +1,5 @@
 use super::model::Model;
-use super::query::{Mutation, ScyllaQuery, QueryValue};
+use super::query::{Mutation, QueryValue, ScyllaQuery};
 
 /// INSERT operations for any `Model`.
 ///
@@ -11,7 +11,10 @@ use super::query::{Mutation, ScyllaQuery, QueryValue};
 /// user_row.insert().execute(&session).await?;
 /// user_row.insert_if_not_exists().execute(&session).await?;
 /// ```
-pub trait Insert: Model where Self: 'static {
+pub trait Insert: Model
+where
+    Self: 'static,
+{
     /// Builds a full INSERT query using this struct's field values.
     ///
     /// Uses `INSERT INTO … VALUES …` (upsert semantics — overwrites if PK exists).

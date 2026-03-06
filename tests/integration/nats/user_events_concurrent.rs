@@ -1,12 +1,12 @@
 use axum_backend::infrastructure::messaging::{
-    MessagingService, NatsClient,
     events::{v1::UserCreatedEventV1, v2::UserCreatedEventV2, Event},
     subjects::{SubjectVersion, UserEventType, UserSubject},
+    MessagingService, NatsClient,
 };
+use futures::StreamExt;
 use std::time::Duration;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::time::timeout;
-use futures::StreamExt;
 
 #[tokio::test]
 async fn test_concurrent_version_subscriptions() {
@@ -33,11 +33,13 @@ async fn test_concurrent_version_subscriptions() {
 
     // Subscribe to v1 events
     let v1_subject = UserSubject::build("test", SubjectVersion::V1, UserEventType::Created);
-    let mut v1_subscriber = client.subscribe(v1_subject.clone()).await.expect("Failed to subscribe to v1");
+    let mut v1_subscriber =
+        client.subscribe(v1_subject.clone()).await.expect("Failed to subscribe to v1");
 
     // Subscribe to v2 events
     let v2_subject = UserSubject::build("test", SubjectVersion::V2, UserEventType::Created);
-    let mut v2_subscriber = client.subscribe(v2_subject.clone()).await.expect("Failed to subscribe to v2");
+    let mut v2_subscriber =
+        client.subscribe(v2_subject.clone()).await.expect("Failed to subscribe to v2");
 
     // Publish v1 event
     let v1_event = UserCreatedEventV1::new(
@@ -68,7 +70,7 @@ async fn test_concurrent_version_subscriptions() {
 
     let received_v1 = UserCreatedEventV1::from_bytes(&v1_message.payload)
         .expect("Failed to deserialize v1 event");
-    
+
     assert_eq!(received_v1.user_id, "user-v1-001");
     assert_eq!(received_v1.email, "v1@example.com");
 
@@ -80,7 +82,7 @@ async fn test_concurrent_version_subscriptions() {
 
     let received_v2 = UserCreatedEventV2::from_bytes(&v2_message.payload)
         .expect("Failed to deserialize v2 event");
-    
+
     assert_eq!(received_v2.user_id, "user-v2-001");
     assert_eq!(received_v2.email, "v2@example.com");
     assert_eq!(received_v2.role, "admin");
@@ -111,7 +113,8 @@ async fn test_no_cross_version_event_leakage() {
 
     // Subscribe ONLY to v1 events
     let v1_subject = UserSubject::build("test", SubjectVersion::V1, UserEventType::Created);
-    let mut v1_subscriber = client.subscribe(v1_subject.clone()).await.expect("Failed to subscribe to v1");
+    let mut v1_subscriber =
+        client.subscribe(v1_subject.clone()).await.expect("Failed to subscribe to v1");
 
     // Publish v2 event (should NOT be received by v1 subscriber)
     let v2_subject = UserSubject::build("test", SubjectVersion::V2, UserEventType::Created);
@@ -141,9 +144,9 @@ async fn test_no_cross_version_event_leakage() {
         .expect("Timed out waiting for message")
         .expect("Stream ended unexpectedly");
 
-    let received = UserCreatedEventV1::from_bytes(&message.payload)
-        .expect("Failed to deserialize event");
-    
+    let received =
+        UserCreatedEventV1::from_bytes(&message.payload).expect("Failed to deserialize event");
+
     // Verify we received the v1 event, not the v2 event
     assert_eq!(received.user_id, "user-v1-valid");
     assert_eq!(received.email, "valid@example.com");

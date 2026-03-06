@@ -18,22 +18,17 @@ pub struct RedisCacheRepository {
 impl RedisCacheRepository {
     pub async fn new(redis_url: &str) -> Result<Self, CacheError> {
         if redis_url.starts_with("redis-cluster://") {
-            let nodes: Vec<&str> = redis_url
-                .trim_start_matches("redis-cluster://")
-                .split(',')
-                .collect();
+            let nodes: Vec<&str> =
+                redis_url.trim_start_matches("redis-cluster://").split(',').collect();
 
-            let client = redis::cluster::ClusterClient::new(nodes)
-                .map_err(CacheError::Redis)?;
-            
+            let client = redis::cluster::ClusterClient::new(nodes).map_err(CacheError::Redis)?;
+
             let connection = client
                 .get_async_connection()
                 .await
                 .map_err(|e| CacheError::Connection(e.to_string()))?;
 
-            Ok(Self {
-                connection: RedisConnection::Cluster(connection),
-            })
+            Ok(Self { connection: RedisConnection::Cluster(connection) })
         } else {
             let client = redis::Client::open(redis_url)?;
             let connection_manager = client
@@ -41,9 +36,7 @@ impl RedisCacheRepository {
                 .await
                 .map_err(|e| CacheError::Connection(e.to_string()))?;
 
-            Ok(Self {
-                connection: RedisConnection::Single(connection_manager),
-            })
+            Ok(Self { connection: RedisConnection::Single(connection_manager) })
         }
     }
 
@@ -67,7 +60,7 @@ impl RedisCacheRepository {
                     .invoke_async(&mut conn)
                     .await
                     .map_err(CacheError::Redis)
-            }
+            },
             RedisConnection::Cluster(conn) => {
                 let mut conn = conn.clone();
                 script
@@ -76,7 +69,7 @@ impl RedisCacheRepository {
                     .invoke_async(&mut conn)
                     .await
                     .map_err(CacheError::Redis)
-            }
+            },
         }
     }
 }
@@ -88,22 +81,22 @@ impl CacheRepository for RedisCacheRepository {
             RedisConnection::Single(conn) => {
                 let mut conn = conn.clone();
                 conn.get(key).await
-            }
+            },
             RedisConnection::Cluster(conn) => {
                 let mut conn = conn.clone();
                 conn.get(key).await
-            }
+            },
         };
 
         match result {
             Ok(value) => {
                 debug!("Cache hit for key: {}", key);
                 Ok(value)
-            }
+            },
             Err(e) => {
                 error!("Failed to get cache key {}: {}", key, e);
                 Err(CacheError::Redis(e))
-            }
+            },
         }
     }
 
@@ -113,22 +106,22 @@ impl CacheRepository for RedisCacheRepository {
             RedisConnection::Single(conn) => {
                 let mut conn = conn.clone();
                 conn.set_ex::<_, _, ()>(key, value, ttl_seconds).await
-            }
+            },
             RedisConnection::Cluster(conn) => {
                 let mut conn = conn.clone();
                 conn.set_ex::<_, _, ()>(key, value, ttl_seconds).await
-            }
+            },
         };
 
         match result {
             Ok(_) => {
                 debug!("Cache set for key: {} (TTL: {}s)", key, ttl_seconds);
                 Ok(())
-            }
+            },
             Err(e) => {
                 error!("Failed to set cache key {}: {}", key, e);
                 Err(CacheError::Redis(e))
-            }
+            },
         }
     }
 
@@ -137,43 +130,39 @@ impl CacheRepository for RedisCacheRepository {
             RedisConnection::Single(conn) => {
                 let mut conn = conn.clone();
                 conn.del(key).await
-            }
+            },
             RedisConnection::Cluster(conn) => {
                 let mut conn = conn.clone();
                 conn.del(key).await
-            }
+            },
         };
 
         match result {
             Ok(()) => {
                 debug!("Cache deleted for key: {}", key);
                 Ok(())
-            }
+            },
             Err(e) => {
                 error!("Failed to delete cache key {}: {}", key, e);
                 Err(CacheError::Redis(e))
-            }
+            },
         }
     }
 
     async fn set_nx(&self, key: &str, value: &str, ttl: Duration) -> Result<bool, CacheError> {
         let ttl_millis = ttl.as_millis() as u64;
         let mut cmd = redis::cmd("SET");
-        cmd.arg(key)
-            .arg(value)
-            .arg("PX")
-            .arg(ttl_millis)
-            .arg("NX");
+        cmd.arg(key).arg(value).arg("PX").arg(ttl_millis).arg("NX");
 
         let result: Result<Option<String>, redis::RedisError> = match &self.connection {
             RedisConnection::Single(conn) => {
                 let mut conn = conn.clone();
                 cmd.query_async(&mut conn).await
-            }
+            },
             RedisConnection::Cluster(conn) => {
                 let mut conn = conn.clone();
                 cmd.query_async(&mut conn).await
-            }
+            },
         };
 
         match result {
@@ -194,7 +183,7 @@ impl CacheRepository for RedisCacheRepository {
             Ok(v) => {
                 let count: i64 = redis::from_redis_value(v).unwrap_or(0);
                 Ok(count == 1)
-            }
+            },
             Err(e) => Err(e),
         }
     }

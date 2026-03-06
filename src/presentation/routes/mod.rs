@@ -1,9 +1,11 @@
 pub mod auth;
 pub mod health;
+pub mod posts;
 pub mod users;
 
 pub use auth::create_auth_routes;
 pub use health::health_routes;
+pub use posts::post_routes;
 pub use users::user_routes;
 
 use crate::infrastructure::SystemMonitor;
@@ -11,8 +13,8 @@ use crate::{
     application::{
         dto::auth::{
             AuthResponse, ForgotPasswordRequest, LoginRequest, LogoutRequest, RefreshTokenRequest,
-            RegisterRequest, RegisterResponse, ResendConfirmCodeRequest, SetPasswordRequest, UserInfo,
-            VerifyEmailRequest,
+            RegisterRequest, RegisterResponse, ResendConfirmCodeRequest, SetPasswordRequest,
+            UserInfo, VerifyEmailRequest,
         },
         use_cases::{
             ForgotPasswordUseCase, LoginUseCase, LogoutUseCase, RegisterUseCase,
@@ -55,6 +57,11 @@ use utoipa_swagger_ui::SwaggerUi;
         crate::presentation::handlers::user::import_users,
         crate::presentation::handlers::role::get_user_role,
         crate::presentation::handlers::role::update_user_role,
+        crate::presentation::handlers::post::create_post,
+        crate::presentation::handlers::post::get_post,
+        crate::presentation::handlers::post::list_posts,
+        crate::presentation::handlers::post::update_post,
+        crate::presentation::handlers::post::delete_post,
     ),
     components(
         schemas(
@@ -72,6 +79,11 @@ use utoipa_swagger_ui::SwaggerUi;
             crate::application::dto::user::CreateUserDto,
             crate::application::dto::user::UpdateUserDto,
             crate::application::dto::user::UserResponseDto,
+            crate::application::dto::post::CreatePostDto,
+            crate::application::dto::post::UpdatePostDto,
+            crate::application::dto::post::ListPostsQueryDto,
+            crate::application::dto::post::PostResponseDto,
+            crate::application::dto::post::PostListResponseDto,
             crate::application::dto::role_dto::UpdateRoleRequest,
             crate::application::dto::role_dto::RoleResponse,
             crate::application::dto::role_dto::RolePermissions,
@@ -82,6 +94,8 @@ use utoipa_swagger_ui::SwaggerUi;
             ErrorResponseWrapper,
             UserResponseWrapper,
             UserListResponseWrapper,
+            crate::presentation::responses::PostResponseWrapper,
+            crate::presentation::responses::PostListResponseWrapper,
             crate::presentation::responses::RoleResponseWrapper,
         )
     ),
@@ -90,7 +104,8 @@ use utoipa_swagger_ui::SwaggerUi;
         (name = "auth", description = "Authentication endpoints"),
         (name = "health", description = "System health endpoints"),
         (name = "users", description = "User management endpoints"),
-        (name = "roles", description = "Role management endpoints")
+        (name = "roles", description = "Role management endpoints"),
+        (name = "posts", description = "Post management endpoints")
     ),
     info(
         title = "Axum Backend API",
@@ -189,7 +204,18 @@ pub async fn create_router(
                 jwt_manager.clone(),
             ),
         )
-        .nest("/api/users", user_routes(pool, auth_repo, jwt_manager, cache_repository, nats_client).await)
+        .nest(
+            "/api/users",
+            user_routes(
+                pool.clone(),
+                auth_repo,
+                jwt_manager.clone(),
+                cache_repository.clone(),
+                nats_client,
+            )
+            .await,
+        )
+        .nest("/api/posts", post_routes(pool, jwt_manager, cache_repository))
         .layer(prometheus_layer)
         .layer(Extension(system_monitor))
 }

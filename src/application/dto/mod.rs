@@ -3,11 +3,13 @@
 /// DTOs define the structure of data sent to and from the API.
 /// Organized by domain for better maintainability.
 pub mod auth;
+pub mod post;
 pub mod role;
 pub mod user;
 
 // Re-export commonly used DTOs
 pub use auth::*;
+pub use post::*;
 pub use role::*;
 pub use user::*;
 
@@ -20,3 +22,6 @@ pub use user as user_dto;
 
 #[deprecated(since = "0.3.0", note = "Use `role` module instead")]
 pub use role as role_dto;
+
+#[deprecated(since = "0.3.0", note = "Use `post` module instead")]
+pub use post as post_dto;

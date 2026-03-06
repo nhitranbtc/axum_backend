@@ -164,8 +164,7 @@ mod tests {
     #[test]
     fn test_update_name() {
         let email = Email::parse("test@example.com").unwrap();
-        let mut user =
-            User::new(email, "John Doe".to_string()).unwrap();
+        let mut user = User::new(email, "John Doe".to_string()).unwrap();
 
         user.update_name("Jane Doe".to_string()).unwrap();
         assert_eq!(user.name, "Jane Doe");
@@ -174,8 +173,7 @@ mod tests {
     #[test]
     fn test_update_email() {
         let email = Email::parse("test@example.com").unwrap();
-        let mut user =
-            User::new(email, "John Doe".to_string()).unwrap();
+        let mut user = User::new(email, "John Doe".to_string()).unwrap();
 
         let new_email = Email::parse("new@example.com").unwrap();
         user.update_email(new_email);

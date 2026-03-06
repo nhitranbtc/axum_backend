@@ -1,5 +1,5 @@
-use ractor::{Actor, ActorProcessingErr, ActorRef};
 use async_nats::Client;
+use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tracing::info;
 
 use crate::infrastructure::messaging::{
@@ -7,7 +7,6 @@ use crate::infrastructure::messaging::{
     subjects::{SubjectVersion, UserEventType, UserSubject},
     subscriber,
 };
-
 
 /// User subscriber actor state
 pub struct UserSubscriberState {
@@ -57,43 +56,43 @@ impl Actor for UserSubscriberActor {
             UserSubscriberMessage::SubscribeV1 { event_type } => {
                 let subject = UserSubject::build(&state.env, SubjectVersion::V1, event_type);
                 info!("Subscribing to v1 subject: {}", subject);
-                
+
                 if let Ok(sub) = state.client.subscribe(subject.clone()).await {
                     match event_type {
                         UserEventType::Created => {
                             tokio::spawn(subscriber::handle_subscription(sub, V1CreatedProcessor));
-                        }
+                        },
                         UserEventType::Updated => {
                             tokio::spawn(subscriber::handle_subscription(sub, V1UpdatedProcessor));
-                        }
+                        },
                         UserEventType::Deleted => {
                             tokio::spawn(subscriber::handle_subscription(sub, V1DeletedProcessor));
-                        }
+                        },
                     }
                 }
-            }
+            },
             UserSubscriberMessage::SubscribeV2 { event_type } => {
                 let subject = UserSubject::build(&state.env, SubjectVersion::V2, event_type);
                 info!("Subscribing to v2 subject: {}", subject);
-                
+
                 if let Ok(sub) = state.client.subscribe(subject.clone()).await {
                     match event_type {
                         UserEventType::Created => {
                             tokio::spawn(subscriber::handle_subscription(sub, V2CreatedProcessor));
-                        }
+                        },
                         UserEventType::Updated => {
                             tokio::spawn(subscriber::handle_subscription(sub, V2UpdatedProcessor));
-                        }
+                        },
                         UserEventType::Deleted => {
                             tokio::spawn(subscriber::handle_subscription(sub, V2DeletedProcessor));
-                        }
+                        },
                     }
                 }
-            }
+            },
             UserSubscriberMessage::SubscribeAllV1 => {
                 let subject = UserSubject::build_version_wildcard(&state.env, SubjectVersion::V1);
                 info!("Subscribing to all v1 events: {}", subject);
-                
+
                 if let Ok(sub) = state.client.subscribe(subject.clone()).await {
                     tokio::spawn(subscriber::handle_wildcard_subscription(
                         sub,
@@ -102,11 +101,11 @@ impl Actor for UserSubscriberActor {
                         V1DeletedProcessor,
                     ));
                 }
-            }
+            },
             UserSubscriberMessage::SubscribeAllV2 => {
                 let subject = UserSubject::build_version_wildcard(&state.env, SubjectVersion::V2);
                 info!("Subscribing to all v2 events: {}", subject);
-                
+
                 if let Ok(sub) = state.client.subscribe(subject.clone()).await {
                     tokio::spawn(subscriber::handle_wildcard_subscription(
                         sub,
@@ -115,7 +114,7 @@ impl Actor for UserSubscriberActor {
                         V2DeletedProcessor,
                     ));
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -129,12 +128,15 @@ struct V1DeletedProcessor;
 #[async_trait::async_trait]
 impl EventProcessor for V1CreatedProcessor {
     type Event = UserCreatedEventV1;
-    
+
     async fn process(&self, event: Self::Event) {
-        info!("Processing UserCreatedEventV1: user_id={}, email={}", event.user_id, event.email);
+        info!(
+            "Processing UserCreatedEventV1: user_id={}, email={}",
+            event.user_id, event.email
+        );
         // Add your business logic here
     }
-    
+
     fn event_name(&self) -> &'static str {
         "UserCreatedEventV1"
     }
@@ -143,12 +145,12 @@ impl EventProcessor for V1CreatedProcessor {
 #[async_trait::async_trait]
 impl EventProcessor for V1UpdatedProcessor {
     type Event = UserUpdatedEventV1;
-    
+
     async fn process(&self, event: Self::Event) {
         info!("Processing UserUpdatedEventV1: user_id={}", event.user_id);
         // Add your business logic here
     }
-    
+
     fn event_name(&self) -> &'static str {
         "UserUpdatedEventV1"
     }
@@ -157,12 +159,12 @@ impl EventProcessor for V1UpdatedProcessor {
 #[async_trait::async_trait]
 impl EventProcessor for V1DeletedProcessor {
     type Event = UserDeletedEventV1;
-    
+
     async fn process(&self, event: Self::Event) {
         info!("Processing UserDeletedEventV1: user_id={}", event.user_id);
         // Add your business logic here
     }
-    
+
     fn event_name(&self) -> &'static str {
         "UserDeletedEventV1"
     }
@@ -176,13 +178,15 @@ struct V2DeletedProcessor;
 #[async_trait::async_trait]
 impl EventProcessor for V2CreatedProcessor {
     type Event = UserCreatedEventV2;
-    
+
     async fn process(&self, event: Self::Event) {
-        info!("Processing UserCreatedEventV2: user_id={}, email={}, role={}", 
-              event.user_id, event.email, event.role);
+        info!(
+            "Processing UserCreatedEventV2: user_id={}, email={}, role={}",
+            event.user_id, event.email, event.role
+        );
         // Add your business logic here
     }
-    
+
     fn event_name(&self) -> &'static str {
         "UserCreatedEventV2"
     }
@@ -191,12 +195,12 @@ impl EventProcessor for V2CreatedProcessor {
 #[async_trait::async_trait]
 impl EventProcessor for V2UpdatedProcessor {
     type Event = UserUpdatedEventV2;
-    
+
     async fn process(&self, event: Self::Event) {
         info!("Processing UserUpdatedEventV2: user_id={}", event.user_id);
         // Add your business logic here
     }
-    
+
     fn event_name(&self) -> &'static str {
         "UserUpdatedEventV2"
     }
@@ -205,13 +209,15 @@ impl EventProcessor for V2UpdatedProcessor {
 #[async_trait::async_trait]
 impl EventProcessor for V2DeletedProcessor {
     type Event = UserDeletedEventV2;
-    
+
     async fn process(&self, event: Self::Event) {
-        info!("Processing UserDeletedEventV2: user_id={}, reason={:?}", 
-              event.user_id, event.reason);
+        info!(
+            "Processing UserDeletedEventV2: user_id={}, reason={:?}",
+            event.user_id, event.reason
+        );
         // Add your business logic here
     }
-    
+
     fn event_name(&self) -> &'static str {
         "UserDeletedEventV2"
     }

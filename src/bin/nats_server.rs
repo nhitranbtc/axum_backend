@@ -1,5 +1,5 @@
 use axum_backend::infrastructure::messaging::{
-    events::{v2::*, traits::Event},
+    events::{traits::Event, v2::*},
     subjects::{SubjectVersion, UserSubject},
 };
 use futures::StreamExt;
@@ -20,8 +20,7 @@ struct Config {
 impl Config {
     fn from_env() -> Self {
         Self {
-            nats_url: env::var("NATS_URL")
-                .unwrap_or_else(|_| "nats://localhost:4222".to_string()),
+            nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string()),
             nats_user: env::var("NATS_USER").ok(),
             nats_password: env::var("NATS_PASSWORD").ok(),
             nats_token: env::var("NATS_TOKEN").ok(),
@@ -33,7 +32,7 @@ impl Config {
 /// Process incoming NATS messages and deserialize them into typed events
 async fn process_message(message: async_nats::Message) {
     let subject = message.subject.as_str();
-    
+
     info!(
         subject = %subject,
         payload_size = message.payload.len(),
@@ -54,14 +53,14 @@ async fn process_message(message: async_nats::Message) {
                 // - Send welcome email
                 // - Update analytics
                 // - Sync to external systems
-            }
+            },
             Err(e) => {
                 error!(
                     subject = %subject,
                     error = %e,
                     "❌ Failed to deserialize UserCreatedEventV2"
                 );
-            }
+            },
         }
     } else if subject.contains(".updated") {
         match UserUpdatedEventV2::from_bytes(&message.payload) {
@@ -79,7 +78,7 @@ async fn process_message(message: async_nats::Message) {
                         email_change.previous_value, email_change.new_value
                     ));
                 }
-                
+
                 info!(
                     user_id = %event.user_id,
                     changes = %changes.join(", "),
@@ -90,14 +89,14 @@ async fn process_message(message: async_nats::Message) {
                 // - Invalidate caches
                 // - Update search indexes
                 // - Audit logging
-            }
+            },
             Err(e) => {
                 error!(
                     subject = %subject,
                     error = %e,
                     "❌ Failed to deserialize UserUpdatedEventV2"
                 );
-            }
+            },
         }
     } else if subject.contains(".deleted") {
         match UserDeletedEventV2::from_bytes(&message.payload) {
@@ -112,14 +111,14 @@ async fn process_message(message: async_nats::Message) {
                 // - Clean up user data
                 // - Revoke sessions
                 // - Archive records
-            }
+            },
             Err(e) => {
                 error!(
                     subject = %subject,
                     error = %e,
                     "❌ Failed to deserialize UserDeletedEventV2"
                 );
-            }
+            },
         }
     } else {
         warn!(
@@ -138,27 +137,21 @@ async fn main() -> Result<(), anyhow::Error> {
     // 1. Initialize logging with better formatting
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_thread_ids(false)
-        )
+        .with(tracing_subscriber::fmt::layer().with_target(false).with_thread_ids(false))
         .init();
 
     // 2. Load configuration
     let config = Config::from_env();
-    
+
     info!("🚀 Starting NATS Event Subscriber");
     info!("Environment: {}", config.app_env);
     info!("NATS URL: {}", config.nats_url);
 
     // 3. Configure connection options
-    let mut options = async_nats::ConnectOptions::new()
-        .name("axum-backend-subscriber"); // Set client name for identification
-    
+    let mut options = async_nats::ConnectOptions::new().name("axum-backend-subscriber"); // Set client name for identification
+
     if let (Some(user), Some(pass)) = (&config.nats_user, &config.nats_password) {
         info!("🔐 Using username/password authentication");
         options = options.user_and_password(user.clone(), pass.clone());
@@ -174,17 +167,17 @@ async fn main() -> Result<(), anyhow::Error> {
         error!("❌ Failed to connect to NATS: {}", e);
         e
     })?;
-    
+
     info!("✅ Connected to NATS successfully");
 
     // 5. Subscribe to all v2 user events
     let subject = UserSubject::build_version_wildcard(&config.app_env, SubjectVersion::V2);
-    
+
     let mut subscriber = client.subscribe(subject.clone()).await.map_err(|e| {
         error!("❌ Failed to subscribe to '{}': {}", subject, e);
         e
     })?;
-    
+
     info!("📡 Subscribed to: {}", subject);
     info!("⏳ Waiting for messages... (Press Ctrl+C to stop)");
 

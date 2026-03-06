@@ -1,8 +1,8 @@
-use axum_backend::domain::entities::User;
-use axum_backend::domain::repositories::user::{UserRepository, RepositoryError};
-use axum_backend::domain::value_objects::{Email, UserId};
-use axum_backend::infrastructure::cache::{CacheRepository, CacheError};
 use async_trait::async_trait;
+use axum_backend::domain::entities::User;
+use axum_backend::domain::repositories::user::{RepositoryError, UserRepository};
+use axum_backend::domain::value_objects::{Email, UserId};
+use axum_backend::infrastructure::cache::{CacheError, CacheRepository};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,9 +13,7 @@ pub struct MockUserRepository {
 
 impl MockUserRepository {
     pub fn new() -> Self {
-        Self {
-            users: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self { users: Arc::new(Mutex::new(Vec::new())) }
     }
 }
 
@@ -48,7 +46,7 @@ impl UserRepository for MockUserRepository {
             users[pos] = user.clone();
             Ok(user.clone())
         } else {
-             Err(RepositoryError::NotFound)
+            Err(RepositoryError::NotFound)
         }
     }
 
@@ -56,7 +54,11 @@ impl UserRepository for MockUserRepository {
         Ok(0)
     }
 
-    async fn list_paginated(&self, _limit: i64, _offset: i64) -> Result<Vec<User>, RepositoryError> {
+    async fn list_paginated(
+        &self,
+        _limit: i64,
+        _offset: i64,
+    ) -> Result<Vec<User>, RepositoryError> {
         Ok(vec![])
     }
 
@@ -90,4 +92,3 @@ impl CacheRepository for MockCacheRepository {
         Ok(true)
     }
 }
-

@@ -1,13 +1,13 @@
 use axum_backend::infrastructure::messaging::{
-    MessagingService, NatsClient,
     events::{v1::UserCreatedEventV1, Event},
     subjects::{SubjectVersion, UserEventType, UserSubject},
+    MessagingService, NatsClient,
 };
 
+use futures::StreamExt;
 use std::time::Duration;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::time::timeout;
-use futures::StreamExt;
 
 #[tokio::test]
 async fn test_user_events_v1_created_subscription() {
@@ -37,7 +37,7 @@ async fn test_user_events_v1_created_subscription() {
 
     // Build subject for v1 created events
     let subject = UserSubject::build("test", SubjectVersion::V1, UserEventType::Created);
-    
+
     // Subscribe
     let mut subscriber = client.subscribe(subject.clone()).await.expect("Failed to subscribe");
 
@@ -47,7 +47,7 @@ async fn test_user_events_v1_created_subscription() {
         "test@example.com".to_string(),
         "John Doe".to_string(),
     );
-    
+
     let payload = event.to_bytes().expect("Failed to serialize event");
     client.publish(subject.clone(), payload).await.expect("Failed to publish");
 
@@ -58,10 +58,10 @@ async fn test_user_events_v1_created_subscription() {
         .expect("Stream ended unexpectedly");
 
     assert_eq!(message.subject.to_string(), subject);
-    
-    let received_event = UserCreatedEventV1::from_bytes(&message.payload)
-        .expect("Failed to deserialize event");
-    
+
+    let received_event =
+        UserCreatedEventV1::from_bytes(&message.payload).expect("Failed to deserialize event");
+
     assert_eq!(received_event.user_id, "user-123");
     assert_eq!(received_event.email, "test@example.com");
     assert_eq!(received_event.name, "John Doe");
@@ -101,7 +101,7 @@ async fn test_user_events_v1_wildcard_subscription() {
         "wildcard@example.com".to_string(),
         "Jane Doe".to_string(),
     );
-    
+
     let payload = event.to_bytes().expect("Failed to serialize event");
     client.publish(subject, payload).await.expect("Failed to publish");
 
@@ -111,9 +111,9 @@ async fn test_user_events_v1_wildcard_subscription() {
         .expect("Timed out waiting for message")
         .expect("Stream ended unexpectedly");
 
-    let received_event = UserCreatedEventV1::from_bytes(&message.payload)
-        .expect("Failed to deserialize event");
-    
+    let received_event =
+        UserCreatedEventV1::from_bytes(&message.payload).expect("Failed to deserialize event");
+
     assert_eq!(received_event.user_id, "user-456");
     assert_eq!(received_event.email, "wildcard@example.com");
 }

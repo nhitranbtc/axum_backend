@@ -66,3 +66,22 @@ impl From<crate::config::app_config::ConfigError> for AppError {
         AppError::Config(err.to_string())
     }
 }
+
+impl From<crate::domain::repositories::post::PostRepositoryError> for AppError {
+    fn from(err: crate::domain::repositories::post::PostRepositoryError) -> Self {
+        match err {
+            crate::domain::repositories::post::PostRepositoryError::AlreadyExists(msg) => {
+                AppError::Validation(msg)
+            },
+            crate::domain::repositories::post::PostRepositoryError::Conflict(msg) => {
+                AppError::Validation(msg)
+            },
+            crate::domain::repositories::post::PostRepositoryError::NotFound => {
+                AppError::NotFound("Post not found".to_string())
+            },
+            crate::domain::repositories::post::PostRepositoryError::Internal(msg) => {
+                AppError::Internal(anyhow::anyhow!("Post repository error: {}", msg))
+            },
+        }
+    }
+}

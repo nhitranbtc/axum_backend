@@ -70,7 +70,7 @@ async fn test_user_repository_operations() {
     };
 
     let session = start_scylla().await.expect("Failed to start container");
-    let repo = UserRepositoryImpl::new(Arc::clone(&session)).await.expect("repo init");
+    let repo = UserRepositoryImpl::new(Arc::clone(&session));
 
     let email = Email::parse("test-save@example.com").unwrap();
     let user = User::new(email.clone(), "Test User".to_string()).unwrap();
@@ -148,7 +148,7 @@ async fn test_user_repository_operations() {
 #[serial]
 async fn test_auth_repository_operations() {
     let session = start_scylla().await.expect("Failed to start container");
-    let repo = AuthRepositoryImpl::new(Arc::clone(&session)).await.expect("repo init");
+    let repo = AuthRepositoryImpl::new(Arc::clone(&session));
 
     let email = "auth-create@example.com";
     let user = repo
@@ -265,7 +265,7 @@ async fn test_auth_repository_operations() {
 #[serial]
 async fn test_event_repository_operations() {
     let session = start_scylla().await.expect("Failed to start container");
-    let repo = Arc::new(EventRepository::new(Arc::clone(&session)).await.expect("repo init"));
+    let repo = Arc::new(EventRepository::new(Arc::clone(&session)));
 
     let user_id = Uuid::new_v4();
     let event = UserEventRow::new(
@@ -278,7 +278,7 @@ async fn test_event_repository_operations() {
     assert!(result.is_ok(), "save_event failed: {:?}", result.err());
 
     // --- merged event repo test ---
-    let repo = Arc::new(EventRepository::new(Arc::clone(&session)).await.expect("repo init"));
+    let repo = Arc::new(EventRepository::new(Arc::clone(&session)));
 
     let user_id = Uuid::new_v4();
     for event_type in ["user.login", "user.profile_update", "user.logout"] {
@@ -291,13 +291,13 @@ async fn test_event_repository_operations() {
     }
 
     // --- merged event repo test ---
-    let repo = Arc::new(EventRepository::new(Arc::clone(&session)).await.expect("repo init"));
+    let repo = Arc::new(EventRepository::new(Arc::clone(&session)));
 
     let user_id = Uuid::new_v4();
     let mut handles = vec![];
 
     for i in 0..10 {
-        let repo_clone = Arc::clone(&repo);
+        let repo_clone: Arc<EventRepository> = Arc::clone(&repo);
         let handle = tokio::spawn(async move {
             let event = UserEventRow::new(
                 user_id,
@@ -321,7 +321,7 @@ async fn test_event_repository_operations() {
 #[serial]
 async fn test_session_repository_save_and_delete() {
     let session = start_scylla().await.expect("Failed to start container");
-    let repo = SessionRepository::new(Arc::clone(&session)).await.expect("repo init");
+    let repo = SessionRepository::new(Arc::clone(&session));
 
     let user_id = Uuid::new_v4();
     let session_data = UserSessionRow::new(
@@ -355,8 +355,9 @@ async fn test_user_session_row_creation() {
 
     assert_eq!(session.user_id, user_id);
     let expected = chrono::Utc::now() + chrono::Duration::seconds(3600);
-    let diff = (session.expires_at - expected).num_seconds().abs();
-    assert!(diff < 2, "expiration should be within 2s of expected");
+    let expected_ms = expected.timestamp_millis();
+    let diff = (session.expires_at.0 - expected_ms).abs();
+    assert!(diff < 2000, "expiration should be within 2s of expected");
 }
 
 #[tokio::test]

@@ -2,12 +2,14 @@ use tonic::Status;
 use uuid::Uuid;
 
 /// Validates that a string is a valid UUID
+#[allow(clippy::result_large_err)]
 pub fn validate_uuid(uuid_str: &str) -> Result<Uuid, Status> {
     Uuid::parse_str(uuid_str)
         .map_err(|e| Status::invalid_argument(format!("Invalid UUID '{}': {}", uuid_str, e)))
 }
 
 /// Validates that a string is not empty
+#[allow(clippy::result_large_err)]
 pub fn validate_not_empty(value: &str, field_name: &str) -> Result<(), Status> {
     if value.trim().is_empty() {
         return Err(Status::invalid_argument(format!("{} cannot be empty", field_name)));
@@ -15,7 +17,7 @@ pub fn validate_not_empty(value: &str, field_name: &str) -> Result<(), Status> {
     Ok(())
 }
 
-/// Validates that a value is within a range
+#[allow(clippy::result_large_err)]
 pub fn validate_range<T: PartialOrd + std::fmt::Display>(
     value: T,
     min: T,

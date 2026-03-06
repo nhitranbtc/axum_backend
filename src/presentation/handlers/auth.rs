@@ -82,7 +82,7 @@ pub async fn register<R: AuthRepository, C: CacheRepository + ?Sized>(
 
     // Execute use case
     let response = use_case
-        .execute(payload.email, payload.name)
+        .execute(payload.email, payload.name, payload.password)
         .await
         .map_err(|e| AuthError::RegisterError(e.to_string()))?;
 

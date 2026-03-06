@@ -24,6 +24,7 @@ services:
       --broadcast-address scylla1
       --broadcast-rpc-address scylla1
       --seed-provider-parameters seeds=scylla1
+      --minimum-replication-factor-warn-threshold 1
     networks:
       - axum_net
     healthcheck:

@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use tonic::{Request, Status};
 
 /// Logging interceptor that logs incoming gRPC requests

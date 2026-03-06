@@ -1,257 +1,146 @@
 use async_trait::async_trait;
-use scylla::statement::prepared::PreparedStatement;
-use scylla::value::CqlTimestamp;
+use scylla::client::caching_session::CachingSession;
 use std::sync::Arc;
 use tracing::debug;
 use uuid::Uuid;
 
-use crate::{
-    domain::{
-        entities::User,
-        repositories::user_repository::{RepositoryError, UserRepository},
-        value_objects::{Email, UserId, UserRole},
-    },
-    infrastructure::database::scylla::{
-        connection::ScyllaSession,
-        models::UserRow,
-        scylla_utils::{from_cql_ts, opt_from_cql_ts, opt_to_cql_ts, to_cql_ts, UserRowTuple},
-    },
+use crate::domain::{
+    entities::User,
+    repositories::user_repository::{RepositoryError, UserRepository},
+    value_objects::{Email, UserId, UserRole},
+};
+use crate::infrastructure::database::scylla::{
+    connection::ScyllaSession,
+    models::UserRow,
+    operations::prelude::*,
 };
 
-/// ScyllaDB implementation of `UserRepository`.
+/// ScyllaDB implementation of [`UserRepository`].
 ///
-/// All queries are prepared at construction time; ScyllaDB caches their plan server-side
-/// so subsequent executions skip the parse/plan phase entirely.
+/// Holds only an `Arc<CachingSession>` — no `PreparedStatement` fields.
+/// The `CachingSession` transparently prepares and caches each unique query
+/// string the first time it is executed (charybdis-style architecture).
 #[derive(Clone)]
 pub struct RepositoryImpl {
-    session: Arc<ScyllaSession>,
-    ps_upsert: PreparedStatement,
-    ps_find_by_id: PreparedStatement,
-    ps_find_by_email: PreparedStatement,
-    ps_count: PreparedStatement,
-    ps_list: PreparedStatement,
-    ps_delete: PreparedStatement,
-    ps_delete_all: PreparedStatement,
+    session: Arc<CachingSession>,
 }
 
 impl RepositoryImpl {
-    pub async fn new(session: Arc<ScyllaSession>) -> Result<Self, RepositoryError> {
-        let s = session.session();
-        let prepare = |q: &'static str| async move {
-            s.prepare(q)
-                .await
-                .map_err(|e| RepositoryError::Internal(e.to_string()))
-        };
-
-        let (ps_upsert, ps_find_by_id, ps_find_by_email, ps_count, ps_list, ps_delete, ps_delete_all) = tokio::try_join!(
-            prepare(
-                "INSERT INTO users (user_id, email, name, password_hash, role, is_active, \
-                 email_verified, confirmation_code, confirmation_code_expires_at, \
-                 last_login, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            ),
-            prepare(
-                "SELECT user_id, email, name, password_hash, role, is_active, \
-                 email_verified, confirmation_code, confirmation_code_expires_at, \
-                 last_login, created_at, updated_at FROM users WHERE user_id = ?"
-            ),
-            prepare(
-                "SELECT user_id, email, name, password_hash, role, is_active, \
-                 email_verified, confirmation_code, confirmation_code_expires_at, \
-                 last_login, created_at, updated_at FROM users WHERE email = ? ALLOW FILTERING"
-            ),
-            prepare("SELECT COUNT(*) FROM users"),
-            prepare(
-                "SELECT user_id, email, name, password_hash, role, is_active, \
-                 email_verified, confirmation_code, confirmation_code_expires_at, \
-                 last_login, created_at, updated_at FROM users LIMIT ?"
-            ),
-            prepare("DELETE FROM users WHERE user_id = ?"),
-            prepare("TRUNCATE users"),
-        )?;
-
-        Ok(Self {
-            session,
-            ps_upsert,
-            ps_find_by_id,
-            ps_find_by_email,
-            ps_count,
-            ps_list,
-            ps_delete,
-            ps_delete_all,
-        })
+    pub fn new(session: Arc<ScyllaSession>) -> Self {
+        // ScyllaSession is a thin newtype around Arc<CachingSession>.
+        // We clone the inner session so the repo can be freely shared.
+        Self { session: session.session() }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Private helpers ───────────────────────────────────────────────────────
 
-    fn scylla_err(e: impl std::fmt::Display) -> RepositoryError {
+    fn db_err(e: impl std::fmt::Display) -> RepositoryError {
         RepositoryError::Internal(e.to_string())
     }
 
-    fn row_to_user_row(row: UserRowTuple) -> UserRow {
-        UserRow {
-            user_id: row.0,
-            email: row.1,
-            name: row.2,
-            password_hash: row.3,
-            role: row.4,
-            is_active: row.5,
-            email_verified: row.6,
-            confirmation_code: row.7,
-            confirmation_code_expires_at: opt_from_cql_ts(row.8),
-            last_login: opt_from_cql_ts(row.9),
-            created_at: from_cql_ts(row.10),
-            updated_at: from_cql_ts(row.11),
-        }
-    }
-
-    fn user_row_to_entity(row: UserRow) -> Result<User, RepositoryError> {
+    fn row_to_entity(row: UserRow) -> Result<User, RepositoryError> {
         Ok(User::from_existing(
             UserId::from_uuid(row.user_id),
-            Email::parse(&row.email).map_err(|e| {
-                RepositoryError::Internal(format!("Invalid email in DB: {}", e))
-            })?,
+            Email::parse(&row.email)
+                .map_err(|e| RepositoryError::Internal(format!("Invalid email in DB: {e}")))?,
             row.name,
             row.password_hash,
             UserRole::parse(&row.role).unwrap_or_default(),
             row.is_active,
             row.email_verified,
             row.confirmation_code,
-            row.confirmation_code_expires_at,
-            row.last_login,
-            row.created_at,
-            row.updated_at,
+            UserRow::from_opt_ts(row.confirmation_code_expires_at),
+            UserRow::from_opt_ts(row.last_login),
+            UserRow::from_ts(row.created_at),
+            UserRow::from_ts(row.updated_at),
         ))
     }
 
-    /// Upsert a user (used by both `save` and `update`).
-    async fn upsert_user(&self, user: &User) -> Result<(), RepositoryError> {
-        self.session
-            .session()
-            .execute_unpaged(
-                &self.ps_upsert,
-                (
-                    *user.id.as_uuid(),
-                    user.email.as_str(),
-                    user.name.as_str(),
-                    &user.password_hash,
-                    user.role.to_string(),
-                    user.is_active,
-                    user.is_email_verified,
-                    &user.confirmation_code,
-                    opt_to_cql_ts(user.confirmation_code_expires_at),
-                    opt_to_cql_ts(user.last_login),
-                    to_cql_ts(user.created_at),
-                    to_cql_ts(user.updated_at),
-                ),
-            )
+    /// INSERT or full-replace a user row.
+    async fn upsert(&self, user: &User) -> Result<(), RepositoryError> {
+        let row = UserRow {
+            user_id: *user.id.as_uuid(),
+            email: user.email.as_str().to_string(),
+            name: user.name.clone(),
+            password_hash: user.password_hash.clone(),
+            role: user.role.to_string(),
+            is_active: user.is_active,
+            email_verified: user.is_email_verified,
+            confirmation_code: user.confirmation_code.clone(),
+            confirmation_code_expires_at: UserRow::opt_ts(user.confirmation_code_expires_at),
+            last_login: UserRow::opt_ts(user.last_login),
+            created_at: UserRow::ts(user.created_at),
+            updated_at: UserRow::ts(user.updated_at),
+        };
+
+        row.insert()
+            .execute(&self.session)
             .await
-            .map_err(Self::scylla_err)?;
+            .map_err(Self::db_err)?;
         Ok(())
     }
 
-    /// Fetch a user by primary key.
     async fn fetch_by_id(&self, id: Uuid) -> Result<Option<UserRow>, RepositoryError> {
-        let result = self
-            .session
-            .session()
-            .execute_unpaged(&self.ps_find_by_id, (id,))
+        UserRow::maybe_find_by_primary_key_value((id,))
+            .execute(&self.session)
             .await
-            .map_err(Self::scylla_err)?;
-
-        let rows_iter = result
-            .into_rows_result()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
-
-        if let Some(row) = rows_iter
-            .rows::<UserRowTuple>()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?
-            .next()
-        {
-            let row = row.map_err(|e| RepositoryError::Internal(e.to_string()))?;
-            Ok(Some(Self::row_to_user_row(row)))
-        } else {
-            Ok(None)
-        }
+            .map_err(Self::db_err)
     }
 
-    /// Fetch a user via the email secondary index.
-    async fn fetch_by_email_str(&self, email: &str) -> Result<Option<UserRow>, RepositoryError> {
-        let result = self
-            .session
-            .session()
-            .execute_unpaged(&self.ps_find_by_email, (email,))
+    async fn fetch_by_email(&self, email: &str) -> Result<Option<UserRow>, RepositoryError> {
+        UserRow::maybe_find_first(UserRow::FIND_BY_EMAIL_QUERY, (email,))
+            .execute(&self.session)
             .await
-            .map_err(Self::scylla_err)?;
-
-        let rows_iter = result
-            .into_rows_result()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
-
-        if let Some(row) = rows_iter
-            .rows::<UserRowTuple>()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?
-            .next()
-        {
-            let row = row.map_err(|e| RepositoryError::Internal(e.to_string()))?;
-            Ok(Some(Self::row_to_user_row(row)))
-        } else {
-            Ok(None)
-        }
+            .map_err(Self::db_err)
     }
 }
 
 #[async_trait]
 impl UserRepository for RepositoryImpl {
     async fn save(&self, user: &User) -> Result<User, RepositoryError> {
-        debug!("Saving user {}", user.id.as_uuid());
-        self.upsert_user(user).await?;
+        debug!("UserRepo::save {}", user.id.as_uuid());
+        self.upsert(user).await?;
         Ok(user.clone())
     }
 
     async fn update(&self, user: &User) -> Result<User, RepositoryError> {
-        debug!("Updating user {}", user.id.as_uuid());
-        self.upsert_user(user).await?;
+        debug!("UserRepo::update {}", user.id.as_uuid());
+        self.upsert(user).await?;
         Ok(user.clone())
     }
 
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError> {
-        debug!("Finding user by id {}", id.as_uuid());
-        let row = self.fetch_by_id(*id.as_uuid()).await?;
-        row.map(Self::user_row_to_entity).transpose()
+        debug!("UserRepo::find_by_id {}", id.as_uuid());
+        self.fetch_by_id(*id.as_uuid())
+            .await?
+            .map(Self::row_to_entity)
+            .transpose()
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>, RepositoryError> {
-        debug!("Finding user by email {}", email.as_str());
-        let row = self.fetch_by_email_str(email.as_str()).await?;
-        row.map(Self::user_row_to_entity).transpose()
+        debug!("UserRepo::find_by_email {}", email.as_str());
+        self.fetch_by_email(email.as_str())
+            .await?
+            .map(Self::row_to_entity)
+            .transpose()
     }
 
     async fn exists_by_email(&self, email: &Email) -> Result<bool, RepositoryError> {
-        Ok(self.fetch_by_email_str(email.as_str()).await?.is_some())
+        Ok(self.fetch_by_email(email.as_str()).await?.is_some())
     }
 
     async fn count(&self) -> Result<i64, RepositoryError> {
-        // Note: scalar COUNT on a wide table is fine but expensive; consider a counter table
+        // Note: full-table COUNT is expensive; consider a dedicated counter table
         // for hot-path code.
-        let result = self
-            .session
-            .session()
-            .execute_unpaged(&self.ps_count, &[])
+        let result = execute_unpaged(&self.session, UserRow::COUNT_QUERY, &[])
             .await
-            .map_err(Self::scylla_err)?;
-
-        let rows_iter = result
+            .map_err(Self::db_err)?
             .into_rows_result()
             .map_err(|e| RepositoryError::Internal(e.to_string()))?;
 
-        let count: i64 = rows_iter
-            .rows::<(i64,)>()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?
-            .next()
-            .ok_or_else(|| RepositoryError::Internal("No COUNT result".to_string()))?
-            .map(|(c,)| c)
+        let (count,): (i64,) = result
+            .first_row()
             .map_err(|e| RepositoryError::Internal(e.to_string()))?;
-
         Ok(count)
     }
 
@@ -260,52 +149,29 @@ impl UserRepository for RepositoryImpl {
         limit: i64,
         _offset: i64,
     ) -> Result<Vec<User>, RepositoryError> {
-        // ScyllaDB pagination uses paging state, not OFFSET.
-        // We use a simple LIMIT here; callers that need cursor-based pagination
-        // should use the raw session paging API.
-        let result = self
-            .session
-            .session()
-            .execute_unpaged(&self.ps_list, (limit as i32,))
+        // ScyllaDB uses paging state, not OFFSET. A simple LIMIT is used here;
+        // callers needing cursor pagination should use execute_single_page directly.
+        let rows = UserRow::find(UserRow::FIND_ALL_QUERY, (limit as i32,))
+            .execute(&self.session)
             .await
-            .map_err(Self::scylla_err)?;
+            .map_err(Self::db_err)?;
 
-        let rows_iter = result
-            .into_rows_result()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?;
-
-        let mut users = Vec::new();
-        for row in rows_iter
-            .rows::<UserRowTuple>()
-            .map_err(|e| RepositoryError::Internal(e.to_string()))?
-        {
-            let row = row.map_err(|e| RepositoryError::Internal(e.to_string()))?;
-            let user = Self::user_row_to_entity(Self::row_to_user_row(row))?;
-            users.push(user);
-        }
-
-        Ok(users)
+        Ok(rows.into_iter().flat_map(Self::row_to_entity).collect())
     }
 
     async fn delete(&self, id: UserId) -> Result<bool, RepositoryError> {
-        debug!("Deleting user {}", id.as_uuid());
-        if self.fetch_by_id(*id.as_uuid()).await?.is_none() {
-            return Ok(false);
+        debug!("UserRepo::delete {}", id.as_uuid());
+        if let Some(row) = self.fetch_by_id(*id.as_uuid()).await? {
+            row.delete().execute(&self.session).await.map_err(Self::db_err)?;
+            return Ok(true);
         }
-        self.session
-            .session()
-            .execute_unpaged(&self.ps_delete, (*id.as_uuid(),))
-            .await
-            .map_err(Self::scylla_err)?;
-        Ok(true)
+        Ok(false)
     }
 
     async fn delete_all(&self) -> Result<usize, RepositoryError> {
-        self.session
-            .session()
-            .execute_unpaged(&self.ps_delete_all, &[])
+        execute_unpaged(&self.session, UserRow::DELETE_ALL_QUERY, &[])
             .await
-            .map_err(Self::scylla_err)?;
-        Ok(0) // TRUNCATE doesn't return a row count
+            .map_err(Self::db_err)?;
+        Ok(0) // TRUNCATE does not return a row count
     }
 }

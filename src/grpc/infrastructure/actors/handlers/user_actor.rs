@@ -105,9 +105,7 @@ impl UserServiceActor {
         let user_id = UserId::from_uuid(user_uuid);
 
         // Query database using repository
-        let repo = UserRepositoryImpl::new(db_pool.clone())
-            .await
-            .map_err(|e| { tracing::error!("Repo init failed: {}", e); Status::internal("DB error") })?;
+        let repo = UserRepositoryImpl::new(db_pool.clone());
 
         let user_option = repo.find_by_id(user_id).await.map_err(|e| {
             tracing::error!("Database query error: {}", e);
@@ -168,9 +166,7 @@ impl UserServiceActor {
         user.set_password(password_hash);
 
         // 4. Save to Repository
-        let repo = UserRepositoryImpl::new(db_pool.clone())
-            .await
-            .map_err(|e| { tracing::error!("Repo init failed: {}", e); Status::internal("DB error") })?;
+        let repo = UserRepositoryImpl::new(db_pool.clone());
 
         let saved_user = repo.save(&user).await.map_err(|e| match e {
             crate::domain::repositories::user::RepositoryError::AlreadyExists(_) => {

@@ -14,6 +14,12 @@ pub struct RegisterRequest {
 
     #[validate(length(min = 1, max = 255, message = "Name must be between 1 and 255 characters"))]
     pub name: String,
+
+    /// Optional password. If provided it is hashed and stored at registration time,
+    /// so the user can log in immediately after verifying their email.
+    /// If omitted, the user must call POST /api/auth/password after verification.
+    #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]

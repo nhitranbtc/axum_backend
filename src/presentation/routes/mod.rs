@@ -11,7 +11,7 @@ use crate::{
     application::{
         dto::auth::{
             AuthResponse, ForgotPasswordRequest, LoginRequest, LogoutRequest, RefreshTokenRequest,
-            RegisterRequest, ResendConfirmCodeRequest, SetPasswordRequest, UserInfo,
+            RegisterRequest, RegisterResponse, ResendConfirmCodeRequest, SetPasswordRequest, UserInfo,
             VerifyEmailRequest,
         },
         use_cases::{
@@ -21,8 +21,8 @@ use crate::{
     },
     infrastructure::database::{AuthRepositoryImpl, DbPool},
     presentation::responses::{
-        AuthResponseWrapper, ErrorResponseWrapper, StringResponseWrapper, UserListResponseWrapper,
-        UserResponseWrapper,
+        AuthResponseWrapper, ErrorResponseWrapper, RegisterResponseWrapper, StringResponseWrapper,
+        UserListResponseWrapper, UserResponseWrapper,
     },
     shared::utils::jwt::JwtManager,
 };
@@ -59,6 +59,7 @@ use utoipa_swagger_ui::SwaggerUi;
     components(
         schemas(
             RegisterRequest,
+            RegisterResponse,
             LoginRequest,
             LogoutRequest,
             ForgotPasswordRequest,
@@ -76,6 +77,7 @@ use utoipa_swagger_ui::SwaggerUi;
             crate::application::dto::role_dto::RolePermissions,
             crate::presentation::handlers::user::ListUsersQuery,
             AuthResponseWrapper,
+            RegisterResponseWrapper,
             StringResponseWrapper,
             ErrorResponseWrapper,
             UserResponseWrapper,
@@ -114,6 +116,7 @@ impl Modify for SecurityAddon {
 }
 
 /// Create the main application router
+#[allow(clippy::too_many_arguments)]
 pub async fn create_router(
     pool: DbPool,
     jwt_secret: String,
@@ -129,7 +132,7 @@ pub async fn create_router(
     nats_client: Arc<crate::infrastructure::messaging::NatsClient>,
 ) -> Router {
     // Create repositories
-    let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()).await.expect("Failed to initialize auth repository"));
+    let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()));
     // let user_repo = Arc::new(UserRepositoryImpl::new(pool.clone()));
 
     // Create JWT manager

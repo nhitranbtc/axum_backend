@@ -50,7 +50,7 @@ impl<R: UserRepository, C: CacheRepository + ?Sized> UpdateUserUseCase<R, C> {
         // Find existing user
         let mut user = self
             .user_repository
-            .find_by_id(user_id.clone())
+            .find_by_id(user_id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("User with ID {} not found", user_id)))?;
 

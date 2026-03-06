@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use axum_backend::infrastructure::database::{create_scylla_session, DbPool};
+use axum_backend::infrastructure::database::create_scylla_session;
 use axum_backend::presentation::routes::create_router;
 use axum_prometheus::{metrics_exporter_prometheus::PrometheusHandle, PrometheusMetricLayer};
 use reqwest::Client;
@@ -9,12 +9,25 @@ use std::net::SocketAddr;
 use std::sync::OnceLock;
 use tokio::net::TcpListener;
 
-static PROMETHEUS_COMPONENTS: OnceLock<(PrometheusMetricLayer, PrometheusHandle)> = OnceLock::new();
-
+use crate::common::assertions::assert_success;
 use crate::common::mock::MockScylla;
+
+static PROMETHEUS_COMPONENTS: OnceLock<(PrometheusMetricLayer<'static>, PrometheusHandle)> =
+    OnceLock::new();
 use axum_backend::config::scylla::ScyllaConfig;
 
-/// Test server instance
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const DEFAULT_JWT_SECRET: &str = "test_secret_must_be_at_least_32_bytes_long";
+const JWT_ACCESS_EXPIRY_SECS: i64 = 3600;
+const JWT_REFRESH_EXPIRY_SECS: i64 = 86400;
+const JWT_ISSUER: &str = "test-issuer";
+const JWT_AUDIENCE: &str = "test-audience";
+const CONFIRM_CODE_EXPIRY_SECS: i64 = 60;
+
+// ── TestServer ─────────────────────────────────────────────────────────────────
+
+/// A full in-process test server backed by an ephemeral ScyllaDB instance.
 pub struct TestServer {
     pub addr: SocketAddr,
     pub client: Client,
@@ -23,51 +36,46 @@ pub struct TestServer {
 }
 
 impl TestServer {
-    /// Create a new test server instance
+    /// Create a server with a no-op email service (default for most tests).
     pub async fn new() -> Self {
         Self::build(false).await
     }
 
-    /// Create a new test server instance with real email service
+    /// Create a server that uses the real SMTP email service.
     pub async fn new_with_real_email() -> Self {
         Self::build(true).await
     }
 
+    // ── Private builder ────────────────────────────────────────────────────────
+
     async fn build(use_real_email: bool) -> Self {
-        // 1. Initialize Infrastructure (Standalone)
         dotenvy::dotenv().ok();
 
-        // Always use ephemeral database for tests to ensure isolation and independence
+        // Ephemeral ScyllaDB — unique keyspace per test run for full isolation
         let mock_db = MockScylla::new().await;
-        
         let scylla_config = ScyllaConfig {
             nodes: vec![mock_db.contact_node.clone()],
             keyspace: format!("test_keyspace_{}", uuid::Uuid::new_v4().simple()),
-            username: Some(std::env::var("SCYLLA_USERNAME").unwrap_or_else(|_| "cassandra".to_string())),
-            password: Some(std::env::var("SCYLLA_PASSWORD").unwrap_or_else(|_| "cassandra".to_string())),
+            username: Some(
+                std::env::var("SCYLLA_USERNAME").unwrap_or_else(|_| "cassandra".to_string()),
+            ),
+            password: Some(
+                std::env::var("SCYLLA_PASSWORD").unwrap_or_else(|_| "cassandra".to_string()),
+            ),
             replication_factor: 1,
         };
 
-        let mock_db = Some(mock_db);
-
-        // Determine critical params, fallback if needed
-        let jwt_secret = std::env::var("JWT_SECRET")
-            .unwrap_or_else(|_| "test_secret_must_be_at_least_32_bytes_long".to_string());
-        let jwt_access_expiry = 3600;
-        let jwt_refresh_expiry = 86400;
-        let jwt_issuer = "test-issuer".to_string();
-        let jwt_audience = "test-audience".to_string();
+        let jwt_secret =
+            std::env::var("JWT_SECRET").unwrap_or_else(|_| DEFAULT_JWT_SECRET.to_string());
 
         let pool = create_scylla_session(&scylla_config)
             .await
             .expect("Failed to create test ScyllaDB session");
         let pool = std::sync::Arc::new(pool);
-        
-        // 4. Monitoring Setup (Singleton for tests to avoid panic)
+
         let (prometheus_layer, metric_handle) =
             PROMETHEUS_COMPONENTS.get_or_init(|| PrometheusMetricLayer::pair()).clone();
 
-        // 5. Create Router
         let email_service: std::sync::Arc<
             dyn axum_backend::application::services::email::EmailService,
         > = if use_real_email {
@@ -81,24 +89,22 @@ impl TestServer {
             )
         };
 
-        let cache_repository = std::sync::Arc::new(crate::common::repository_mocks::MockCacheRepository);
+        let cache_repository =
+            std::sync::Arc::new(crate::common::repository_mocks::MockCacheRepository);
 
-        // NATS is not mocked yet, but for testing router creation we can just use an async mock or attempt to rely on optional config 
-        // We will create a dummy client or just panic if not available.
-        // But let's create a functional client that connects to a test NATS instance or a no-op fallback.
-        // Actually, NatsClient needs a connection string. Since tests aren't integration tests for NATS yet, 
-        // we'll provide a dummy client that will fail if used, but satisfy the type checker.
-        // Use an uninitialized or basic NatsClient instance since NatsClient has async connections
-        let nats_client = axum_backend::infrastructure::messaging::NatsClient::new("127.0.0.1:4222").await.expect("dummy nats client");
-        
+        let nats_client =
+            axum_backend::infrastructure::messaging::NatsClient::new("127.0.0.1:4222")
+                .await
+                .expect("Failed to create test NATS client");
+
         let app = create_router(
             pool,
             jwt_secret,
-            jwt_access_expiry,
-            jwt_refresh_expiry,
-            jwt_issuer,
-            jwt_audience,
-            60, // confirm_code_expiry
+            JWT_ACCESS_EXPIRY_SECS,
+            JWT_REFRESH_EXPIRY_SECS,
+            JWT_ISSUER.to_string(),
+            JWT_AUDIENCE.to_string(),
+            CONFIRM_CODE_EXPIRY_SECS,
             prometheus_layer,
             metric_handle,
             email_service,
@@ -107,17 +113,16 @@ impl TestServer {
         )
         .await;
 
-        // 5. Bind to Random Port
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind test server");
+        let listener =
+            TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind test server");
         let addr = listener.local_addr().expect("Failed to get local address");
         let base_url = format!("http://{}", addr);
 
-        // 6. Spawn Server Background Task
         tokio::spawn(async move {
             axum::serve(listener, app).await.expect("Test server failed");
         });
 
-        // 7. Wait for readiness
+        // Brief pause to let the server accept connections
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         Self {
@@ -127,133 +132,134 @@ impl TestServer {
                 .build()
                 .expect("Failed to build test client"),
             base_url,
-            _mock_db: mock_db,
+            _mock_db: Some(mock_db),
         }
     }
 
-    /// Get confirmation code from DB
-    pub async fn get_confirmation_code(&self, email_addr: &str) -> String {
-        // Query code manually for tests
-        // NOTE: In ScyllaDB, filtering by secondary index requires ALLOW FILTERING if it's not the PK
-        // In a real test we'd hit the repo or know the UUID. For now, skipping direct DB verification.
-        // We will assume email confirmation is handled by other robust mechanisms.
-        "123456".to_string() // Dummy implementation since this is complex to mock easily with raw Scylla queries
+    // ── Low-level HTTP helpers ─────────────────────────────────────────────────
+
+    /// POST a JSON body to `path` and deserialise the response.
+    pub async fn post_json(&self, path: &str, body: Value) -> Value {
+        self.client
+            .post(format!("{}{}", self.base_url, path))
+            .json(&body)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("POST {path} failed to send: {e}"))
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("POST {path}: failed to parse JSON response: {e}"))
     }
 
-    /// Register a test user (Full Flow: Register -> Verify -> SetPassword -> Login)
+    // ── Auth helpers ───────────────────────────────────────────────────────────
+
+    /// Returns the 6-digit confirmation code for `email`.
+    ///
+    /// The test server uses a `NoOpEmailService`, so no real email is sent.
+    /// The `MockScylla` node stores the code in the DB exactly as the
+    /// production server does — but reading it back requires a live CQL query.
+    ///
+    /// # Current limitation
+    /// This stub returns the fixed value `"123456"`.  Tests that exercise a
+    /// *real* code (e.g. `test_forgot_password_flow`) must go through an
+    /// integration fixture that can query the ephemeral ScyllaDB directly.
+    pub async fn get_confirmation_code(&self, _email: &str) -> String {
+        "123456".to_string()
+    }
+
+    /// `POST /api/auth/verify` — verify an email with its confirmation code.
+    pub async fn verify_email(&self, email: &str, code: &str) -> Value {
+        let res = self
+            .post_json("/api/auth/verify", json!({ "email": email, "code": code }))
+            .await;
+        assert_success(&res);
+        res
+    }
+
+    /// `POST /api/auth/forgot-password` — request a new confirmation code.
+    pub async fn forgot_password(&self, email: &str) -> Value {
+        let res = self
+            .post_json("/api/auth/forgot-password", json!({ "email": email }))
+            .await;
+        assert_success(&res);
+        res
+    }
+
+    /// `POST /api/auth/password` — set a new password using a confirmation code.
+    pub async fn set_password(&self, email: &str, code: &str, password: &str) -> Value {
+        let res = self
+            .post_json(
+                "/api/auth/password",
+                json!({ "email": email, "code": code, "password": password }),
+            )
+            .await;
+        assert_success(&res);
+        res
+    }
+
+    /// Register a user, verify their email, and log them in.
+    ///
+    /// Uses the updated registration flow:
+    /// `POST /api/auth/register` (with password)  
+    /// → `POST /api/auth/verify`  
+    /// → `POST /api/auth/login`
+    ///
+    /// Returns the parsed login response containing `access_token` and user info.
     pub async fn register_user(&self, email: &str, name: &str, password: &str) -> Value {
-        // 1. Register
-        let register_res = self
-            .client
-            .post(format!("{}/api/auth/register", self.base_url))
-            .json(&json!({
-                "email": email,
-                "name": name
-                // password removed from request
-            }))
-            .send()
-            .await
-            .expect("Failed to send register request");
+        // Register with password stored at creation time
+        let reg = self
+            .post_json(
+                "/api/auth/register",
+                json!({ "email": email, "name": name, "password": password }),
+            )
+            .await;
+        assert_success(&reg);
 
-        if !register_res.status().is_success() {
-            let status = register_res.status();
-            let body = register_res.text().await.unwrap();
-            panic!("Register failed: {} - {}", status, body);
-        }
-
-        // 2. Get Code
+        // Verify email with stub code
         let code = self.get_confirmation_code(email).await;
+        self.verify_email(email, &code).await;
 
-        // 3. Verify Email
-        let verify_res = self
-            .client
-            .post(format!("{}/api/auth/verify", self.base_url))
-            .json(&json!({
-                "email": email,
-                "code": code
-            }))
-            .send()
-            .await
-            .expect("Failed to send verify request");
-
-        if !verify_res.status().is_success() {
-            panic!("Verify failed: {:?}", verify_res.text().await);
-        }
-
-        // 4. Set Password
-        let password_res = self
-            .client
-            .post(format!("{}/api/auth/password", self.base_url))
-            .json(&json!({
-                "email": email,
-                "code": code,
-                "password": password
-            }))
-            .send()
-            .await
-            .expect("Failed to send set password request");
-
-        if !password_res.status().is_success() {
-            panic!("Set password failed: {:?}", password_res.text().await);
-        }
-
-        // 5. Login to get tokens (backward compatibility)
-        let login_res = self
-            .client
-            .post(format!("{}/api/auth/login", self.base_url))
-            .json(&json!({
-                "email": email,
-                "password": password
-            }))
-            .send()
-            .await
-            .expect("Failed to send login request");
-
-        login_res.json().await.expect("Failed to parse login response")
+        // Login and return the full response for callers that inspect tokens
+        let login = self
+            .post_json("/api/auth/login", json!({ "email": email, "password": password }))
+            .await;
+        assert_success(&login);
+        login
     }
 
-    /// Login a user and return the access token
+    /// Login a user and return the `access_token` string.
+    ///
+    /// Checks the `access_token` cookie first, then falls back to the JSON body.
     pub async fn login_user(&self, email: &str, password: &str) -> String {
         let response = self
             .client
             .post(format!("{}/api/auth/login", self.base_url))
-            .json(&json!({
-                "email": email,
-                "password": password
-            }))
+            .json(&json!({ "email": email, "password": password }))
             .send()
             .await
             .expect("Failed to send login request");
 
-        // Try to get token from cookie first
         let cookie_token = response
             .cookies()
             .find(|c| c.name() == "access_token")
             .map(|c| c.value().to_string());
 
-        let response_json: Value = response.json().await.expect("Failed to parse login response");
+        let body: Value = response.json().await.expect("Failed to parse login response");
 
-        // If cookie found, use it. Otherwise rely on JSON body (legacy or failure case)
-        if let Some(token) = cookie_token {
-            if !token.is_empty() {
-                return token;
-            }
+        if let Some(token) = cookie_token.filter(|t| !t.is_empty()) {
+            return token;
         }
 
-        let token_option = response_json
-            .get("data")
-            .and_then(|data| data.get("access_token"))
-            .and_then(|token| token.as_str());
-
-        if token_option.is_none() {
-            println!("❌ Login failed! Response: {:?}", response_json);
-            panic!("No access token in response");
-        }
-
-        token_option.unwrap().to_string()
+        body.get("data")
+            .and_then(|d| d.get("access_token"))
+            .and_then(|t| t.as_str())
+            .unwrap_or_else(|| panic!("No access_token in login response: {body:?}"))
+            .to_string()
     }
 
-    /// Get health check
+    // ── Other helpers ──────────────────────────────────────────────────────────
+
+    /// `GET /health`
     pub async fn health_check(&self) -> reqwest::Response {
         self.client
             .get(format!("{}/health", self.base_url))
@@ -262,11 +268,12 @@ impl TestServer {
             .expect("Failed to send health check request")
     }
 
-    /// List users with authentication
+    /// `GET /api/users` with Bearer token authentication.
     pub async fn list_users(&self, token: &str, page: u32, page_size: u32) -> Value {
         self.client
-            .get(format!("{}/api/users?page={}&page_size={}", self.base_url, page, page_size))
-            .header("Authorization", format!("Bearer {}", token))
+            .get(format!("{}/api/users", self.base_url))
+            .query(&[("page", page.to_string()), ("page_size", page_size.to_string())])
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
             .expect("Failed to send list users request")

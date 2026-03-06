@@ -29,12 +29,12 @@ pub async fn cleanup_test_user(pool: &DbPool, email: &str) {
     let query = "SELECT user_id FROM users WHERE email = ? ALLOW FILTERING";
     let values = (email,);
 
-    if let Ok(res) = pool.session().query_unpaged(query, values).await {
+    if let Ok(res) = pool.session().execute_unpaged(query, values).await {
         if let Ok(rows_res) = res.into_rows_result() {
             if let Ok(mut rows) = rows_res.rows::<(uuid::Uuid,)>() {
                 if let Some(Ok((user_id,))) = rows.next() {
                     let delete_query = "DELETE FROM users WHERE user_id = ?";
-                    let _ = pool.session().query_unpaged(delete_query, (user_id,)).await;
+                    let _ = pool.session().execute_unpaged(delete_query, (user_id,)).await;
                 }
             }
         }

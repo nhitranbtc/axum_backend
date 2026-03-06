@@ -90,9 +90,7 @@ impl UserServiceActor {
         let user_id = UserId::from_uuid(user_uuid);
 
         // Query database using repository
-        let repo = UserRepositoryImpl::new(db_pool.clone())
-            .await
-            .map_err(|e| { tracing::error!("Repo init failed: {}", e); Status::internal("DB error") })?;
+        let repo = UserRepositoryImpl::new(db_pool.clone());
         
         let user_option = repo
             .find_by_id(user_id)

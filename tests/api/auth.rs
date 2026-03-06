@@ -1,13 +1,17 @@
-/// Integration tests for authentication endpoints
+//! Integration tests for authentication endpoints.
+//!
+//! Every test uses an ephemeral in-process server backed by a fresh
+//! ScyllaDB keyspace, so tests are fully isolated and order-independent.
 use crate::common::*;
 use reqwest::StatusCode;
 use serde_json::json;
 use serial_test::serial;
 
 // ============================================================================
-// User Registration Tests
+// Registration
 // ============================================================================
 
+/// Happy-path registration returns 201 and echoes the email.
 #[tokio::test]
 #[serial]
 async fn test_register_success() {
@@ -18,108 +22,73 @@ async fn test_register_success() {
 
     assert_success(&res);
     assert_eq!(res["data"]["user"]["email"], email);
-    // Note: token might be empty in JSON if using cookies, check design
 }
 
+/// A second registration with the same email must fail.
 #[tokio::test]
 #[serial]
 async fn test_register_duplicate_email() {
     let server = TestServer::new().await;
     let email = unique_email("reg_dup");
 
-    // First
-    assert_success(&server.register_user(&email, "User 1", TEST_PASSWORD).await);
+    server.register_user(&email, "User 1", TEST_PASSWORD).await;
 
-    // Second (Fail)
     let res = server
-        .client
-        .post(format!("{}/api/auth/register", server.base_url))
-        .json(&json!({
-            "email": email,
-            "name": "User 2",
-            "password": TEST_PASSWORD
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+        .post_json(
+            "/api/auth/register",
+            json!({ "email": email, "name": "User 2", "password": TEST_PASSWORD }),
+        )
+        .await;
 
     assert_error(&res);
 }
 
+/// A malformed email address must be rejected at validation.
 #[tokio::test]
 #[serial]
 async fn test_register_invalid_email() {
     let server = TestServer::new().await;
 
     let res = server
-        .client
-        .post(format!("{}/api/auth/register", server.base_url))
-        .json(&json!({
-            "email": "not-an-email",
-            "name": "Bad Email",
-            "password": TEST_PASSWORD
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+        .post_json(
+            "/api/auth/register",
+            json!({ "email": "not-an-email", "name": "Bad Email", "password": TEST_PASSWORD }),
+        )
+        .await;
 
     assert_error(&res);
 }
 
+/// A password shorter than the minimum length must be rejected.
 #[tokio::test]
 #[serial]
-async fn test_set_password_weak_password() {
+async fn test_set_password_too_short() {
     let server = TestServer::new().await;
-    let email = unique_email("weak_pass_flow");
+    let email = unique_email("weak_pass");
 
-    // 1. Register manually (helper panics on failure)
-    let reg_res = server
-        .client
-        .post(format!("{}/api/auth/register", server.base_url))
-        .json(&json!({
-            "email": email,
-            "name": "Weak Pass User"
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_success(&reg_res);
+    // Register without a password so we can call set-password with a bad one
+    let reg = server
+        .post_json("/api/auth/register", json!({ "email": email, "name": "Weak Pass User" }))
+        .await;
+    assert_success(&reg);
 
-    // 2. Get Code
     let code = server.get_confirmation_code(&email).await;
 
-    // 3. Set Weak Password
     let res = server
-        .client
-        .post(format!("{}/api/auth/password", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code,
-            "password": "123" // Too short
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+        .post_json(
+            "/api/auth/password",
+            json!({ "email": email, "code": code, "password": "123" }),
+        )
+        .await;
 
     assert_error(&res);
 }
 
 // ============================================================================
-// Login Tests
+// Login
 // ============================================================================
 
+/// Registered and verified users can log in and receive an access token.
 #[tokio::test]
 #[serial]
 async fn test_login_success() {
@@ -129,9 +98,10 @@ async fn test_login_success() {
     server.register_user(&email, "Login User", TEST_PASSWORD).await;
 
     let token = server.login_user(&email, TEST_PASSWORD).await;
-    assert!(!token.is_empty());
+    assert!(!token.is_empty(), "Expected a non-empty access token");
 }
 
+/// Wrong password and non-existent email must both be rejected.
 #[tokio::test]
 #[serial]
 async fn test_login_wrong_credentials() {
@@ -140,390 +110,258 @@ async fn test_login_wrong_credentials() {
 
     server.register_user(&email, "Login User", TEST_PASSWORD).await;
 
-    // Wrong Password
-    let res = server
-        .client
-        .post(format!("{}/api/auth/login", server.base_url))
-        .json(&json!({ "email": email, "password": "WrongPassword" }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_error(&res);
+    let wrong_pass = server
+        .post_json("/api/auth/login", json!({ "email": email, "password": "WrongPassword" }))
+        .await;
+    assert_error(&wrong_pass);
 
-    // Wrong Email
-    let res = server
-        .client
-        .post(format!("{}/api/auth/login", server.base_url))
-        .json(&json!({ "email": "nothere@test.com", "password": TEST_PASSWORD }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_error(&res);
+    let wrong_email = server
+        .post_json(
+            "/api/auth/login",
+            json!({ "email": "nobody@test.com", "password": TEST_PASSWORD }),
+        )
+        .await;
+    assert_error(&wrong_email);
 }
 
 // ============================================================================
-// Protected Resources
+// Protected resources
 // ============================================================================
 
+/// Verify three access scenarios for a protected endpoint:
+/// authenticated with Bearer, authenticated via cookie session, unauthenticated.
 #[tokio::test]
 #[serial]
-async fn test_list_users() {
+async fn test_list_users_access_control() {
     let server = TestServer::new().await;
     let email = unique_email("list_users");
 
     server.register_user(&email, "List User", TEST_PASSWORD).await;
     let token = server.login_user(&email, TEST_PASSWORD).await;
 
-    // 1. Authenticated (via Bearer Token)
+    // Bearer token — should succeed
     let res = server.list_users(&token, 1, 10).await;
     assert_success(&res);
-    assert!(res["data"].is_array());
+    assert!(res["data"].is_array(), "Expected data to be an array");
 
-    // 2. Authenticated (via Cookie in server.client)
-    let res_cookie = server
+    // Cookie session carried by server.client — should succeed
+    let cookie_status = server
         .client
         .get(format!("{}/api/users", server.base_url))
         .query(&[("page", "1"), ("page_size", "10")])
         .send()
         .await
-        .unwrap();
-    assert_eq!(res_cookie.status(), StatusCode::OK);
+        .unwrap()
+        .status();
+    assert_eq!(cookie_status, StatusCode::OK);
 
-    // 3. Unauthenticated (Fresh Client)
-    let fresh_client = reqwest::Client::new();
-    let res_unauth =
-        fresh_client.get(format!("{}/api/users", server.base_url)).send().await.unwrap();
-
-    assert_eq!(res_unauth.status(), StatusCode::UNAUTHORIZED);
+    // Fresh client with no credentials — should be rejected
+    let unauth_status = reqwest::Client::new()
+        .get(format!("{}/api/users", server.base_url))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(unauth_status, StatusCode::UNAUTHORIZED);
 }
 
+// ============================================================================
+// Concurrent registrations
+// ============================================================================
+
+/// Five concurrent registrations with different emails must all succeed.
 #[tokio::test]
 #[serial]
 async fn test_concurrent_registrations() {
     let server = TestServer::new().await;
-    let mut handles = vec![];
 
-    for i in 0..5 {
-        let server_url = server.base_url.clone();
-        let client = server.client.clone();
+    let handles: Vec<_> = (0..5)
+        .map(|i| {
+            let url = server.base_url.clone();
+            let client = server.client.clone();
+            tokio::spawn(async move {
+                let email = unique_email(&format!("concurrent_{i}"));
+                client
+                    .post(format!("{url}/api/auth/register"))
+                    .json(&json!({
+                        "email": email,
+                        "name": format!("User {i}"),
+                        "password": TEST_PASSWORD,
+                    }))
+                    .send()
+                    .await
+                    .expect("concurrent register send failed")
+                    .json::<serde_json::Value>()
+                    .await
+                    .expect("concurrent register parse failed")
+            })
+        })
+        .collect();
 
-        handles.push(tokio::spawn(async move {
-            let email = unique_email(&format!("concurrent_{}", i));
-            client
-                .post(format!("{}/api/auth/register", server_url))
-                .json(&json!({
-                    "email": email,
-                    "name": format!("User {}", i),
-                    "password": TEST_PASSWORD
-                }))
-                .send()
-                .await
-                .unwrap()
-                .json::<serde_json::Value>()
-                .await
-                .unwrap()
-        }));
-    }
-
-    for h in handles {
-        let res = h.await.unwrap();
+    for handle in handles {
+        let res = handle.await.expect("task panicked");
         assert_success(&res);
     }
 }
 
 // ============================================================================
-// Forgot Password Tests
+// Forgot-password flow
 // ============================================================================
 
+/// Full forgot-password cycle:
+/// register → login with initial password → forgot-password → set new password
+/// → login succeeds with new password → login fails with old password.
 #[tokio::test]
 #[serial]
 async fn test_forgot_password_flow() {
     let server = TestServer::new().await;
     let email = unique_email("forgot_pass");
-    let initial_password = "InitialPass123!";
-    let new_password = "NewPass123!";
+    let initial = "InitialPass123!";
+    let updated = "NewPass123!";
 
-    // Step 1: Call Register
-    server.register_user(&email, "Forgot User", initial_password).await;
+    server.register_user(&email, "Forgot User", initial).await;
 
-    // Login to verify initial password works (optional verification)
-    let token = server.login_user(&email, initial_password).await;
+    // Baseline: initial password works
+    let token = server.login_user(&email, initial).await;
     assert!(!token.is_empty());
 
-    // Step 2: Call Forgot Password
-    let forgot_res = server
-        .client
-        .post(format!("{}/api/auth/forgot-password", server.base_url))
-        .json(&json!({ "email": email }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-
-    assert_success(&forgot_res);
-
-    // Get the confirmation code (simulating email retrieval)
+    // Request a reset code and set the new password
+    server.forgot_password(&email).await;
     let code = server.get_confirmation_code(&email).await;
     assert_eq!(code.len(), 6);
+    server.set_password(&email, &code, updated).await;
 
-    // Step 3: Call Set Password
-    let set_pass_res = server
-        .client
-        .post(format!("{}/api/auth/password", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code,
-            "password": new_password
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-
-    assert_success(&set_pass_res);
-
-    // 5. Login with NEW password
-    let new_token = server.login_user(&email, new_password).await;
+    // New password must work
+    let new_token = server.login_user(&email, updated).await;
     assert!(!new_token.is_empty());
 
-    // 6. Login with OLD password should fail
-    let old_login_res = server
-        .client
-        .post(format!("{}/api/auth/login", server.base_url))
-        .json(&json!({ "email": email, "password": initial_password }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-
-    assert_error(&old_login_res);
+    // Old password must no longer work
+    let old_attempt = server
+        .post_json("/api/auth/login", json!({ "email": email, "password": initial }))
+        .await;
+    assert_error(&old_attempt);
 }
 
 // ============================================================================
-// Resend Confirm Code Flow Tests
+// Resend-code flow
 // ============================================================================
 
+/// After registration, resending the confirmation code and verifying with the
+/// new code must succeed.
 #[tokio::test]
 #[serial]
 async fn test_resend_code_flow() {
     let server = TestServer::new().await;
-    // Step 1: Call Register
     let email = unique_email("resend_code");
-    let name = "Resend User";
-    // Note: Use simple regiter first part, not the helper that completes flow.
-    let register_res = server
-        .client
-        .post(format!("{}/api/auth/register", server.base_url))
-        .json(&json!({
-            "email": email,
-            "name": name
-        }))
-        .send()
-        .await
-        .unwrap();
 
-    assert!(register_res.status().is_success());
+    // Register without a password to exercise the code-based path
+    let reg = server
+        .post_json("/api/auth/register", json!({ "email": email, "name": "Resend User" }))
+        .await;
+    assert_success(&reg);
 
-    // Step 2: Call Reset Confirm Code (Resend Code)
-    let resend_res = server
-        .client
-        .post(format!("{}/api/auth/resend-code", server.base_url))
-        .json(&json!({ "email": email }))
-        .send()
-        .await
-        .unwrap()
-        .json::<serde_json::Value>()
-        .await
-        .unwrap();
+    // Resend a fresh code
+    let resend = server
+        .post_json("/api/auth/resend-code", json!({ "email": email }))
+        .await;
+    assert_success(&resend);
 
-    assert_success(&resend_res);
-
-    // Get the NEW code
+    // Verify with the (stub) code
     let code = server.get_confirmation_code(&email).await;
     assert_eq!(code.len(), 6);
-
-    // Step 3: Call Verify
-    let verify_res = server
-        .client
-        .post(format!("{}/api/auth/verify", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json::<serde_json::Value>() // Use generic JSON because response might be simpler string wrapper
-        .await
-        .unwrap();
-
-    assert_success(&verify_res);
+    server.verify_email(&email, &code).await;
 }
 
 // ============================================================================
-// Full Authentication Flow Tests
+// Full auth flow
 // ============================================================================
 
+/// Complete auth lifecycle using the password-at-registration flow:
+/// register (with password) → verify → login with password → code login.
 #[tokio::test]
 #[serial]
 async fn test_full_auth_flow() {
     let server = TestServer::new().await;
-    let email = unique_email("flow_test");
-    let name = "Flow User";
-    let password = TEST_PASSWORD;
+    let email = unique_email("full_flow");
 
-    // 1. Register
-    let res = server
-        .client
-        .post(format!("{}/api/auth/register", server.base_url))
-        .json(&json!({
-            "email": email,
-            "name": name
-        }))
-        .send()
-        .await
-        .expect("Failed to send register request");
+    // 1. Register with password
+    let reg = server
+        .post_json(
+            "/api/auth/register",
+            json!({ "email": email, "name": "Flow User", "password": TEST_PASSWORD }),
+        )
+        .await;
+    assert_success(&reg);
 
-    assert_success(&res.json().await.unwrap());
-
-    // 2. Get Code
+    // 2. Verify email
     let code = server.get_confirmation_code(&email).await;
     assert_eq!(code.len(), 6);
+    server.verify_email(&email, &code).await;
 
-    // 3. Verify Code
-    let res = server
-        .client
-        .post(format!("{}/api/auth/verify", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code
-        }))
-        .send()
-        .await
-        .expect("Failed to send verify request");
-
-    // Note: Verify endpoint returns simple 200 OK without body wrapping in some versions,
-    // but based on TestServer helpers it seems to return JSON.
-    assert_eq!(res.status(), StatusCode::OK);
-
-    // 4. Set Password
-    let res = server
-        .client
-        .post(format!("{}/api/auth/password", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code,
-            "password": password
-        }))
-        .send()
-        .await
-        .expect("Failed to send set password request");
-
-    assert_success(&res.json().await.unwrap());
-
-    // 5. Login with Password
-    let res = server
+    // 3. Login with password — access_token cookie must be set
+    let login_resp = server
         .client
         .post(format!("{}/api/auth/login", server.base_url))
-        .json(&json!({
-            "email": email,
-            "password": password
-        }))
+        .json(&json!({ "email": email, "password": TEST_PASSWORD }))
         .send()
         .await
-        .expect("Failed to send login request");
+        .expect("login request failed");
 
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    assert!(
+        login_resp.cookies().any(|c| c.name() == "access_token"),
+        "Expected access_token cookie after password login"
+    );
 
-    // Check for cookie
-    let cookie = res.cookies().find(|c| c.name() == "access_token");
-    assert!(cookie.is_some(), "Access token cookie should be present");
-
-    // 6. Login with Code should FAIL (code reused/cleared)
-    let res = server
+    // 4. Code was consumed by verify — reusing it must fail
+    let stale_code_resp = server
         .client
         .post(format!("{}/api/auth/login", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code
-        }))
+        .json(&json!({ "email": email, "code": code }))
         .send()
         .await
-        .expect("Failed to execute request");
+        .expect("stale code login request failed");
 
-    // Expect 401 Unauthorized or 400 Bad Request depending on implementation of strict code usage
-    assert!(res.status().is_client_error());
+    assert!(
+        stale_code_resp.status().is_client_error(),
+        "Expected 4xx for stale confirmation code, got {}",
+        stale_code_resp.status()
+    );
 }
 
+// ============================================================================
+// Code-based login
+// ============================================================================
+
+/// Users can log in with a fresh confirmation code instead of a password.
+/// The code must be consumed (invalidated) after a successful login.
 #[tokio::test]
 #[serial]
 async fn test_login_with_code_flow() {
     let server = TestServer::new().await;
     let email = unique_email("code_login");
-    let name = "Code User";
 
-    // 1. Register
-    let res = server
-        .client
-        .post(format!("{}/api/auth/register", server.base_url))
-        .json(&json!({
-            "email": email,
-            "name": name
-        }))
-        .send()
-        .await
-        .expect("Failed to send register request");
+    // Register without password to keep the code active after verify
+    let reg = server
+        .post_json("/api/auth/register", json!({ "email": email, "name": "Code User" }))
+        .await;
+    assert_success(&reg);
 
-    assert_success(&res.json().await.unwrap());
-
-    // 2. Get Code
     let code = server.get_confirmation_code(&email).await;
+    server.verify_email(&email, &code).await;
 
-    // 3. Verify Code
-    let res = server
-        .client
-        .post(format!("{}/api/auth/verify", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code
-        }))
-        .send()
-        .await
-        .expect("Failed to send verify request");
-
-    assert_eq!(res.status(), StatusCode::OK);
-
-    // 4. Login with Code (Skip Set Password)
-    // Code should still be valid because `VerifyEmail` does NOT clear it in some flows,
-    // OR we might need to regenerat it.
-    // Based on previous analysis: `Login` clears the code.
-
-    let res = server
+    // Login with the code (before it is cleared by a password-login)
+    let login_resp = server
         .client
         .post(format!("{}/api/auth/login", server.base_url))
-        .json(&json!({
-            "email": email,
-            "code": code
-        }))
+        .json(&json!({ "email": email, "code": code }))
         .send()
         .await
-        .expect("Failed to send login request");
+        .expect("code login request failed");
 
-    assert_eq!(res.status(), StatusCode::OK);
-
-    // Check for cookie
-    let cookie = res.cookies().find(|c| c.name() == "access_token");
-    assert!(cookie.is_some(), "Access token cookie should be present after code login");
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    assert!(
+        login_resp.cookies().any(|c| c.name() == "access_token"),
+        "Expected access_token cookie after code login"
+    );
 }

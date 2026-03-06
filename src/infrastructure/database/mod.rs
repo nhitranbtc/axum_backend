@@ -2,7 +2,6 @@
 ///
 /// All persistence is handled through ScyllaDB.
 /// The postgres sub-module has been removed; use the `scylla` sub-module for all DB access.
-
 pub mod scylla;
 
 use std::sync::Arc;

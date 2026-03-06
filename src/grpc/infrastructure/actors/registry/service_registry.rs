@@ -63,7 +63,7 @@ impl Clone for ServiceRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
 
     // Note: Integration tests would require a test database
     #[test]

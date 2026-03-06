@@ -30,7 +30,7 @@ pub async fn user_routes(
     nats_client: Arc<crate::infrastructure::messaging::NatsClient>,
 ) -> Router {
     // Create repository
-    let user_repo = Arc::new(UserRepositoryImpl::new(pool).await.expect("Failed to initialize user repository"));
+    let user_repo = Arc::new(UserRepositoryImpl::new(pool));
 
     // Create use cases
     let create_user_uc = Arc::new(CreateUserUseCase::new(

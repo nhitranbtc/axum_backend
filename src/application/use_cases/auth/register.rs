@@ -8,6 +8,7 @@ use crate::{
         value_objects::Email,
     },
     infrastructure::cache::{CacheRepository, DistributedLock},
+    shared::utils::password::PasswordManager,
 };
 use std::{sync::Arc, time::Duration};
 use tracing::{error, info};
@@ -60,6 +61,7 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
         &self,
         email: String,
         name: String,
+        password: Option<String>,
     ) -> Result<RegisterResponse, RegisterError> {
         // Validate email format
         let email_vo = Email::parse(&email).map_err(|_| RegisterError::InvalidEmail)?;
@@ -101,13 +103,24 @@ impl<R: AuthRepository, C: CacheRepository + ?Sized> RegisterUseCase<R, C> {
 
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(self.confirm_code_expiry);
 
-        // Create user (inactive, no password)
+        // Hash password if provided
+        let password_hash = if let Some(pw) = password {
+            let hash = tokio::task::spawn_blocking(move || PasswordManager::hash(&pw))
+                .await
+                .map_err(|e| RegisterError::PasswordHashError(e.to_string()))?
+                .map_err(|e| RegisterError::PasswordHashError(e.to_string()))?;
+            Some(hash)
+        } else {
+            None
+        };
+
+        // Create user with optional pre-hashed password
         let user_result = self
             .auth_repo
             .create_user(
                 email_vo.as_str(),
                 &name,
-                None, // No password
+                password_hash,
                 Some(confirmation_code.clone()),
                 Some(expires_at),
             )

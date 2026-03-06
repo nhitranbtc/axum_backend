@@ -25,12 +25,12 @@ impl<R: UserRepository, C: CacheRepository + ?Sized> DeleteUserUseCase<R, C> {
         let user_id = UserId::from_uuid(uuid);
 
         // Check if user exists
-        if self.user_repository.find_by_id(user_id.clone()).await?.is_none() {
+        if self.user_repository.find_by_id(user_id).await?.is_none() {
             return Err(AppError::NotFound(format!("User with ID {} not found", user_id)));
         }
 
         // Delete user
-        self.user_repository.delete(user_id.clone()).await?;
+        self.user_repository.delete(user_id).await?;
 
         // Invalidate cache
         let cache_key = format!("user:{}", user_id);

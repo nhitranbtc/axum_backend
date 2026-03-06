@@ -1,96 +1,343 @@
 #!/bin/bash
-set -e
+# ==============================================================================
+# Axum Backend — Container Orchestration Script
+#
+# Usage:  ./docker/backend/run_container.sh [options]
+# Run from any directory; the script always resolves the project root.
+# ==============================================================================
+set -euo pipefail
 
 # ==============================================================================
-# Configuration
-# ==============================================================================
-COMPOSE_FILE="docker/backend/docker-compose.yml"
-BACKEND_SERVICE="backend"
-REDIS_SERVICE="redis"
-NATS_SERVICE="nats"
-
-# ==============================================================================
-# Helper Functions
+# Constants
 # ==============================================================================
 
-log_info() {
-    echo "ℹ️  $1"
-}
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+readonly ENV_FILE="${PROJECT_ROOT}/.env"
 
-log_success() {
-    echo "✅ $1"
-}
+readonly COMPOSE_FILE="docker/backend/docker-compose.yml"
+readonly SCYLLA_SINGLE_COMPOSE="docker/scylla/docker-compose.yml"
+readonly SCYLLA_CLUSTER_COMPOSE="docker/scylla-cluster/docker-compose.yml"
 
-log_warn() {
-    echo "⚠️  $1"
-}
+readonly BACKEND_CONTAINER="axum_backend"
+readonly SCYLLA_CONTAINER="axum_scylla1"
+readonly REDIS_CONTAINER="axum_redis"
+readonly SCYLLA_MANAGER_CONTAINER="axum_scylla_manager"
+readonly SCYLLA_CLUSTER_NAME="axum-cluster"
+readonly NETWORK_NAME="axum_net"
 
-log_error() {
-    echo "❌ $1"
-}
+readonly REDIS_SERVICE="redis"
+readonly NATS_SERVICE="nats"
 
-usage() {
-    echo "Usage: $0 [options]"
-    echo "Options:"
-    echo "  --single      Use single-node ScyllaDB (docker/scylla)"
-    echo "  --cluster     Use 3-node ScyllaDB cluster (docker/scylla-cluster) [default]"
-    echo "  --clean       Cleanup database (ScyllaDB keyspace drop and Redis flush) before starting"
-    echo "  --build       Force rebuild of the application image (implies --clean)"
-    echo "  --stop        Stop and remove all containers"
-    echo "  --remove      Stop containers, remove volumes, and delete all locally built images"
-    echo "  --test        Run API registration test after startup"
-    echo "  --help        Show this help message"
-    exit 1
-}
+readonly BACKEND_PORT=3000
+readonly HEALTH_MAX_WAIT=30   # seconds
+readonly SCYLLA_CODE_RETRIES=10
 
-run_smoke_test() {
+# ==============================================================================
+# Logging
+# ==============================================================================
+
+log_info()    { echo "ℹ️  $*"; }
+log_success() { echo "✅ $*"; }
+log_warn()    { echo "⚠️  $*"; }
+log_error()   { echo "❌ $*" >&2; }
+
+print_banner() {
     echo ""
     echo "============================================="
-    echo "   🔍 API Smoke Test"
+    echo "   $*"
     echo "============================================="
+}
 
-    # Verify backend is reachable
-    log_info "Checking backend health on port 3000..."
-    max_retries=10
-    count=0
-    while ! curl -s http://localhost:3000/health > /dev/null; do
+# ==============================================================================
+# Usage
+# ==============================================================================
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  --single   Use single-node ScyllaDB  (docker/scylla)
+  --cluster  Use 3-node ScyllaDB cluster (docker/scylla-cluster) [default]
+  --clean    Drop ScyllaDB keyspace and flush Redis before starting
+  --build    Force rebuild of the backend image  (implies --clean)
+  --stop     Stop and remove all containers
+  --remove   Stop containers, remove volumes, and delete locally built images
+  --test     Run the full API smoke test (register → verify → login)
+  --help     Show this help message
+EOF
+    exit 0
+}
+
+# ==============================================================================
+# Docker Compose helpers
+# ==============================================================================
+
+# Wrapper so every compose call shares the same --env-file flag
+dc() {
+    docker compose --env-file "${ENV_FILE}" "$@"
+}
+
+# Load a single value from the .env file, with an optional fallback
+env_val() {
+    local key="$1" fallback="${2:-}"
+    grep -E "^${key}=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2- | tr -d "'\""  || echo "${fallback}"
+}
+
+# ==============================================================================
+# Infrastructure helpers
+# ==============================================================================
+
+ensure_network() {
+    if ! docker network ls --format '{{.Name}}' | grep -q "^${NETWORK_NAME}$"; then
+        log_info "Creating external Docker network '${NETWORK_NAME}'..."
+        docker network create "${NETWORK_NAME}"
+    fi
+}
+
+# Stop the *other* Scylla mode stack to prevent container-name conflicts
+stop_conflicting_scylla() {
+    local other_compose="$1"
+    if dc -f "${other_compose}" ps -q 2>/dev/null | grep -q .; then
+        log_info "Stopping conflicting ScyllaDB stack (${other_compose})..."
+        dc -f "${other_compose}" down --remove-orphans
+    fi
+}
+
+wait_for_scylla_healthy() {
+    log_info "Waiting for ScyllaDB to become healthy..."
+    while [ "$(docker inspect -f '{{.State.Health.Status}}' "${SCYLLA_CONTAINER}" 2>/dev/null || echo starting)" != "healthy" ]; do
         sleep 2
-        count=$((count + 1))
-        if [ $count -ge $max_retries ]; then
-            log_error "Backend is not reachable on port 3000."
+    done
+    log_success "ScyllaDB is healthy."
+}
+
+wait_for_cluster_ring() {
+    log_info "Waiting for all 3 ScyllaDB nodes to join the ring..."
+    local scylla_user scylla_pass
+    scylla_user="$(env_val SCYLLA_USERNAME cassandra)"
+    scylla_pass="$(env_val SCYLLA_PASSWORD cassandra)"
+    while true; do
+        local peers
+        peers=$(docker exec "${SCYLLA_CONTAINER}" cqlsh \
+            -u "${scylla_user}" -p "${scylla_pass}" \
+            -e "SELECT count(*) FROM system.peers;" 2>/dev/null \
+            | grep -oE "[0-9]+" | head -n1 || echo 0)
+        [ "${peers}" -ge 2 ] && break
+        sleep 5
+    done
+    log_success "All 3 ScyllaDB nodes are ready."
+}
+
+start_scylla() {
+    local compose_file="$1"
+    dc -f "${compose_file}" up -d
+    wait_for_scylla_healthy
+    if [[ "${compose_file}" == *"cluster"* ]]; then
+        wait_for_cluster_ring
+    fi
+}
+
+register_scylla_manager() {
+    local scylla_user scylla_pass
+    scylla_user="$(env_val SCYLLA_USERNAME cassandra)"
+    scylla_pass="$(env_val SCYLLA_PASSWORD cassandra)"
+
+    log_info "Registering cluster with Scylla Manager..."
+    for _ in $(seq 1 15); do
+        if docker exec "${SCYLLA_MANAGER_CONTAINER}" sctool status -c "${SCYLLA_CLUSTER_NAME}" >/dev/null 2>&1; then
+            log_success "Cluster '${SCYLLA_CLUSTER_NAME}' already registered."
+            return 0
+        fi
+        sleep 2
+        if docker exec "${SCYLLA_MANAGER_CONTAINER}" sctool version >/dev/null 2>&1; then
+            docker exec "${SCYLLA_MANAGER_CONTAINER}" sctool cluster add \
+                --host scylla1 \
+                --name "${SCYLLA_CLUSTER_NAME}" \
+                --auth-token super-secret-token \
+                --username "${scylla_user}" \
+                --password "${scylla_pass}" \
+            && log_success "Cluster '${SCYLLA_CLUSTER_NAME}' registered with Scylla Manager." \
+            || log_warn "Manager registration failed — register manually: sctool cluster add --host scylla1 --name ${SCYLLA_CLUSTER_NAME} --auth-token super-secret-token"
+            return 0
+        fi
+    done
+    log_warn "Scylla Manager not reachable after retries — skipping registration."
+}
+
+# ==============================================================================
+# Actions
+# ==============================================================================
+
+action_stop() {
+    local scylla_compose="$1"
+    log_info "Stopping all services..."
+    dc -f "${COMPOSE_FILE}" down --remove-orphans
+    dc -f "${scylla_compose}" down --remove-orphans
+    log_success "Services stopped."
+}
+
+action_remove() {
+    local scylla_compose="$1" scylla_mode="$2"
+    log_warn "Removing all containers, volumes, and locally built images..."
+
+    dc -f "${COMPOSE_FILE}"   down --remove-orphans --volumes
+    dc -f "${scylla_compose}" down --remove-orphans --volumes
+    log_success "Containers and volumes removed."
+
+    local images=("${BACKEND_CONTAINER}:latest")
+    if [ "${scylla_mode}" = "single" ]; then
+        images+=("scylla-scylla1")
+    else
+        images+=("scylla-cluster-scylla1" "scylla-cluster-scylla2" "scylla-cluster-scylla3")
+    fi
+
+    for img in "${images[@]}"; do
+        if docker image inspect "${img}" >/dev/null 2>&1; then
+            docker rmi "${img}" && log_success "Removed image: ${img}" || log_warn "Could not remove image: ${img}"
+        else
+            log_info "Image not found (skipped): ${img}"
+        fi
+    done
+    log_success "Done. Run '--build' to rebuild from scratch."
+}
+
+action_clean_db() {
+    local scylla_compose="$1"
+    local scylla_keyspace
+    scylla_keyspace="$(env_val SCYLLA_KEYSPACE axum_backend)"
+
+    log_warn "Cleaning up database data..."
+    log_info "Starting infrastructure for cleanup..."
+    dc -f "${scylla_compose}" up -d
+    dc -f "${COMPOSE_FILE}"   up -d "${REDIS_SERVICE}" "${NATS_SERVICE}"
+
+    wait_for_scylla_healthy
+    if [[ "${scylla_compose}" == *"cluster"* ]]; then
+        wait_for_cluster_ring
+    fi
+
+    log_info "Dropping ScyllaDB keyspace '${scylla_keyspace}'..."
+    docker exec "${SCYLLA_CONTAINER}" sh -c \
+        "cqlsh -u \${SCYLLA_USERNAME} -p \${SCYLLA_PASSWORD} -e \"DROP KEYSPACE IF EXISTS ${scylla_keyspace};\"" \
+        || log_error "Failed to drop ScyllaDB keyspace (continuing)"
+
+    log_info "Flushing Redis data..."
+    docker exec "${REDIS_CONTAINER}" redis-cli FLUSHALL \
+        || log_error "Failed to flush Redis (continuing)"
+
+    log_success "Database cleanup complete."
+}
+
+action_deploy() {
+    local scylla_compose="$1" build_flag="$2"
+    log_info "Launching services..."
+    start_scylla "${scylla_compose}"
+    # shellcheck disable=SC2086
+    dc -f "${COMPOSE_FILE}" up -d ${build_flag} --force-recreate --remove-orphans
+    register_scylla_manager
+}
+
+# ==============================================================================
+# Smoke test
+# ==============================================================================
+
+# Wait until the backend health endpoint responds
+wait_for_backend() {
+    log_info "Waiting for backend on port ${BACKEND_PORT}..."
+    local elapsed=0
+    until curl -s "http://localhost:${BACKEND_PORT}/health" >/dev/null; do
+        sleep 2
+        elapsed=$((elapsed + 2))
+        if [ "${elapsed}" -ge "${HEALTH_MAX_WAIT}" ]; then
+            log_error "Backend not reachable after ${HEALTH_MAX_WAIT}s."
             exit 1
         fi
     done
     log_success "Backend is up."
+}
 
-    log_info "Running registration test..."
-    RESPONSE=$(curl -s -i -X 'POST' \
-        'http://localhost:3000/api/auth/register' \
-        -H 'accept: application/json' \
-        -H 'Content-Type: application/json' \
-        -d '{
-        "email": "user01@gmail.com",
-        "name": "User01",
-        "password": "Test@123"
-        }')
+# Poll ScyllaDB for the 6-digit confirmation code written for a given email
+fetch_confirmation_code() {
+    local email="$1"
+    local scylla_user scylla_pass code=""
+    scylla_user="$(env_val SCYLLA_USERNAME cassandra)"
+    scylla_pass="$(env_val SCYLLA_PASSWORD cassandra)"
 
-    echo "$RESPONSE" | grep -q "HTTP/1.1 201 Created" && echo "$RESPONSE" | grep -q '{"success":true,"data":{'
+    for _ in $(seq 1 "${SCYLLA_CODE_RETRIES}"); do
+        sleep 1
+        code=$(docker exec "${SCYLLA_CONTAINER}" cqlsh \
+            -u "${scylla_user}" -p "${scylla_pass}" \
+            -e "SELECT confirmation_code FROM axum_backend.users WHERE email='${email}' ALLOW FILTERING;" \
+            2>/dev/null | grep -E "^\s+[0-9]{6}" | tr -d ' ')
+        [ -n "${code}" ] && break
+    done
+    echo "${code}"
+}
 
-    if [ $? -eq 0 ]; then
-        log_success "Registration API test PASSED."
-    else
-        log_error "Registration API test FAILED."
-        echo "Response was:"
-        echo "$RESPONSE"
+# Assert a curl response body contains an expected string; exit on failure
+assert_response() {
+    local step="$1" body="$2" expect="$3"
+    if ! echo "${body}" | grep -q "${expect}"; then
+        log_error "Step ${step} FAILED."
+        echo "${body}"
         exit 1
     fi
+    log_success "Step ${step} PASSED."
+}
 
-    echo -e "\n--- Backend Logs (Tail) ---"
-    docker logs --tail 20 axum_backend
+run_smoke_test() {
+    local test_email="smoke_test_$(date +%s)@test.local"
+    local test_name="SmokeUser"
+    local test_pass="Test@1234"
+
+    print_banner "🔍 Smoke Test  (register → verify → login)"
+
+    wait_for_backend
+
+    # Step 1 — Register
+    log_info "Step 1 — Registering: ${test_email}"
+    local reg_resp
+    reg_resp=$(curl -sf -i -X POST "http://localhost:${BACKEND_PORT}/api/auth/register" \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"${test_email}\",\"name\":\"${test_name}\",\"password\":\"${test_pass}\"}")
+    assert_response "1 (register)" "${reg_resp}" "HTTP/1.1 201 Created"
+
+    # Step 2 — Fetch code from DB
+    log_info "Step 2 — Fetching confirmation code from ScyllaDB..."
+    local code
+    code=$(fetch_confirmation_code "${test_email}")
+    if [ -z "${code}" ]; then
+        log_error "Step 2 FAILED — confirmation code not found in DB."
+        exit 1
+    fi
+    log_success "Step 2 PASSED — Code: ${code}"
+
+    # Step 3 — Verify email
+    log_info "Step 3 — Verifying email..."
+    local ver_resp
+    ver_resp=$(curl -sf -X POST "http://localhost:${BACKEND_PORT}/api/auth/verify" \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"${test_email}\",\"code\":\"${code}\"}")
+    assert_response "3 (verify)" "${ver_resp}" '"success":true'
+
+    # Step 4 — Login
+    log_info "Step 4 — Logging in..."
+    local login_resp
+    login_resp=$(curl -sf -X POST "http://localhost:${BACKEND_PORT}/api/auth/login" \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"${test_email}\",\"password\":\"${test_pass}\"}")
+    assert_response "4 (login)" "${login_resp}" '"access_token"'
+
+    print_banner "✅ All smoke tests PASSED"
+    echo ""
+    log_info "Backend logs (tail):"
+    docker logs --tail 15 "${BACKEND_CONTAINER}"
 }
 
 # ==============================================================================
-# Argument Parsing
+# Argument parsing
 # ==============================================================================
 
 CLEAN_DB=false
@@ -98,218 +345,87 @@ FORCE_BUILD=false
 STOP_ONLY=false
 REMOVE_ALL=false
 RUN_TEST=false
-SCYLLA_MODE="cluster"   # default
 TEST_ONLY=false
+SCYLLA_MODE="cluster"
 
 while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --single) SCYLLA_MODE="single" ;;
+    case "$1" in
+        --single)  SCYLLA_MODE="single" ;;
         --cluster) SCYLLA_MODE="cluster" ;;
-        --clean) CLEAN_DB=true ;;
-        --build) 
-            FORCE_BUILD=true
-            CLEAN_DB=true 
-            ;;
-        --stop) STOP_ONLY=true ;;
-        --remove) REMOVE_ALL=true ;;
+        --clean)   CLEAN_DB=true ;;
+        --build)   FORCE_BUILD=true; CLEAN_DB=true ;;
+        --stop)    STOP_ONLY=true ;;
+        --remove)  REMOVE_ALL=true ;;
         --test)
             RUN_TEST=true
-            # If no other action flag is set yet, mark as test-only
-            if [ "$CLEAN_DB" = false ] && [ "$FORCE_BUILD" = false ] && [ "$STOP_ONLY" = false ] && [ "$REMOVE_ALL" = false ]; then
+            if ! "${CLEAN_DB}" && ! "${FORCE_BUILD}" && ! "${STOP_ONLY}" && ! "${REMOVE_ALL}"; then
                 TEST_ONLY=true
             fi
             ;;
-        --help) usage ;;
-        *) echo "Unknown parameter passed: $1"; usage ;;
+        --help)    usage ;;
+        *)         log_error "Unknown option: $1"; usage ;;
     esac
     shift
 done
 
-# Resolve Scylla compose file based on selected mode
-if [ "$SCYLLA_MODE" = "single" ]; then
-    SCYLLA_COMPOSE_FILE="docker/scylla/docker-compose.yml"
-    OTHER_SCYLLA_COMPOSE_FILE="docker/scylla-cluster/docker-compose.yml"
+# Resolve Scylla compose paths from selected mode
+if [ "${SCYLLA_MODE}" = "single" ]; then
+    SCYLLA_COMPOSE="${SCYLLA_SINGLE_COMPOSE}"
+    OTHER_SCYLLA_COMPOSE="${SCYLLA_CLUSTER_COMPOSE}"
 else
-    SCYLLA_COMPOSE_FILE="docker/scylla-cluster/docker-compose.yml"
-    OTHER_SCYLLA_COMPOSE_FILE="docker/scylla/docker-compose.yml"
+    SCYLLA_COMPOSE="${SCYLLA_CLUSTER_COMPOSE}"
+    OTHER_SCYLLA_COMPOSE="${SCYLLA_SINGLE_COMPOSE}"
 fi
 
 # ==============================================================================
-# Main Script
+# Entry point
 # ==============================================================================
 
-# 1. Navigate to Project Root
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$SCRIPT_DIR/../.."
-cd "$PROJECT_ROOT" || { log_error "Failed to navigate to project root"; exit 1; }
+cd "${PROJECT_ROOT}" || { log_error "Cannot cd to project root: ${PROJECT_ROOT}"; exit 1; }
 
-echo "============================================="
-echo "   🚀 Axum Backend Deployment Script"
-echo "   Mode: ScyllaDB ${SCYLLA_MODE^}"
-echo "============================================="
-echo ""
+print_banner "🚀 Axum Backend  |  ScyllaDB ${SCYLLA_MODE^}"
 
-# Short-circuit: --test with no other action flags → just run the smoke test
-if [ "$TEST_ONLY" = true ]; then
+# Short-circuit: --test alone skips deployment and just runs the test suite
+if "${TEST_ONLY}"; then
     run_smoke_test
     exit 0
 fi
 
-# 1.5. Ensure external network exists
-if ! docker network ls --format '{{.Name}}' | grep -q '^axum_net$'; then
-    log_info "Creating external network 'axum_net'..."
-    docker network create axum_net
-fi
+ensure_network
+stop_conflicting_scylla "${OTHER_SCYLLA_COMPOSE}"
 
-# 1.6. Stop the other mode's Scylla stack to avoid container name conflicts
-# (both modes use the same container names: axum_scylla1, axum_scylla_manager)
-if docker compose --env-file .env -f $OTHER_SCYLLA_COMPOSE_FILE ps -q 2>/dev/null | grep -q .; then
-    log_info "Stopping other ScyllaDB mode stack to avoid name conflicts..."
-    docker compose --env-file .env -f $OTHER_SCYLLA_COMPOSE_FILE down --remove-orphans
-fi
-
-# 2. Stop services if requested
-if [ "$STOP_ONLY" = true ]; then
-    log_info "Stopping all services..."
-    docker compose --env-file .env -f $COMPOSE_FILE down --remove-orphans
-    docker compose --env-file .env -f $SCYLLA_COMPOSE_FILE down --remove-orphans
-    log_success "Services stopped."
+if "${STOP_ONLY}"; then
+    action_stop "${SCYLLA_COMPOSE}"
     exit 0
 fi
 
-# 2b. Remove everything (containers + volumes + built images)
-if [ "$REMOVE_ALL" = true ]; then
-    log_warn "Removing all containers, volumes, and locally built images..."
-
-    # Stop containers and remove volumes
-    docker compose --env-file .env -f $COMPOSE_FILE down --remove-orphans --volumes
-    docker compose --env-file .env -f $SCYLLA_COMPOSE_FILE down --remove-orphans --volumes
-    log_success "Containers and volumes removed."
-
-    # Delete locally built images (the ones produced by --build)
-    BUILT_IMAGES=("axum_backend:latest")
-    if [ "$SCYLLA_MODE" = "single" ]; then
-        BUILT_IMAGES+=("scylla-scylla1")
-    else
-        BUILT_IMAGES+=("scylla-cluster-scylla1" "scylla-cluster-scylla2" "scylla-cluster-scylla3")
-    fi
-    for img in "${BUILT_IMAGES[@]}"; do
-        if docker image inspect "$img" > /dev/null 2>&1; then
-            docker rmi "$img" && log_success "Removed image: $img" || log_warn "Could not remove image: $img"
-        else
-            log_info "Image not found (skipped): $img"
-        fi
-    done
-
-    log_success "All locally built images removed. Run '--build' to rebuild from scratch."
+if "${REMOVE_ALL}"; then
+    action_remove "${SCYLLA_COMPOSE}" "${SCYLLA_MODE}"
     exit 0
 fi
 
-# 3. Handle Database Cleanup
-if [ "$CLEAN_DB" = true ]; then
-    log_warn "Cleaning up database data..."
-    
-    # Start infra services first to perform cleanup
-    log_info "Starting infrastructure for cleanup..."
-    docker compose --env-file .env -f $SCYLLA_COMPOSE_FILE up -d
-    docker compose --env-file .env -f $COMPOSE_FILE up -d $REDIS_SERVICE $NATS_SERVICE
-    
-    # Wait for Scylla to be ready
-    log_info "Waiting for ScyllaDB cluster to be healthy..."
-    while [ "$(docker inspect -f {{.State.Health.Status}} axum_scylla1 2>/dev/null || echo 'starting')" != "healthy" ]; do
-        sleep 2
-    done
-
-    if [[ "$SCYLLA_COMPOSE_FILE" == *"cluster"* ]]; then
-        log_info "Waiting for all 3 nodes in the ScyllaDB cluster to join the ring..."
-        while [ "$(docker exec axum_scylla1 sh -c 'cqlsh -u ${SCYLLA_USERNAME} -p ${SCYLLA_PASSWORD} -e "SELECT count(*) FROM system.peers;" 2>/dev/null | grep -oE "[0-9]+" | head -n1 || echo 0')" -lt 2 ]; do
-            sleep 5
-        done
-        log_success "All 3 ScyllaDB nodes are ready!"
-    fi
-
-    # Cleanup ScyllaDB
-    log_info "Dropping ScyllaDB keyspace 'axum_backend'..."
-    docker exec axum_scylla1 sh -c 'cqlsh -u ${SCYLLA_USERNAME} -p ${SCYLLA_PASSWORD} -e "DROP KEYSPACE IF EXISTS ${SCYLLA_KEYSPACE};"' || log_error "Failed to drop ScyllaDB keyspace"
-    
-    # Cleanup Redis
-    log_info "Flushing Redis data..."
-    docker exec axum_redis redis-cli FLUSHALL || log_error "Failed to flush Redis"
-
-    log_success "Database cleanup complete."
+if "${CLEAN_DB}"; then
+    action_clean_db "${SCYLLA_COMPOSE}"
 fi
-
-# 4. Launch Services
-log_info "Launching services..."
 
 BUILD_FLAG=""
-if [ "$FORCE_BUILD" = true ]; then
-    BUILD_FLAG="--build"
-fi
+"${FORCE_BUILD}" && BUILD_FLAG="--build"
 
-# Use --force-recreate to ensure backend restarts and re-initializes after a potential cleanup
-docker compose --env-file .env -f $SCYLLA_COMPOSE_FILE up -d
+action_deploy "${SCYLLA_COMPOSE}" "${BUILD_FLAG}"
 
-log_info "Waiting for ScyllaDB cluster to be healthy..."
-while [ "$(docker inspect -f {{.State.Health.Status}} axum_scylla1 2>/dev/null || echo 'starting')" != "healthy" ]; do
-    sleep 2
-done
+print_banner "🎉 Deployment Complete"
+cat <<EOF
+   Swagger UI : http://localhost:${BACKEND_PORT}/swagger-ui/
+   Health     : http://localhost:${BACKEND_PORT}/health
+   ScyllaDB   : localhost:9042
+   Redis      : localhost:6379
+   NATS       : localhost:4222
+   Logs       : docker logs -f ${BACKEND_CONTAINER}
+=============================================
+EOF
 
-if [[ "$SCYLLA_COMPOSE_FILE" == *"cluster"* ]]; then
-    log_info "Waiting for all 3 nodes in the ScyllaDB cluster to join the ring..."
-    while [ "$(docker exec axum_scylla1 sh -c 'cqlsh -u ${SCYLLA_USERNAME} -p ${SCYLLA_PASSWORD} -e "SELECT count(*) FROM system.peers;" 2>/dev/null | grep -oE "[0-9]+" | head -n1 || echo 0')" -lt 2 ]; do
-        sleep 5
-    done
-    log_success "All 3 ScyllaDB nodes are ready!"
-fi
+"${CLEAN_DB}" && log_info "Schema will be recreated automatically by the backend on startup."
 
-docker compose --env-file .env -f $COMPOSE_FILE up -d $BUILD_FLAG --force-recreate --remove-orphans
+"${RUN_TEST}" && run_smoke_test
 
-# Register the cluster with Manager (per docs: https://manager.docs.scylladb.com/stable/add-a-cluster.html)
-log_info "Registering cluster with Scylla Manager..."
-# Wait for manager to be ready
-for i in $(seq 1 15); do
-    if docker exec axum_scylla_manager sctool status -c axum-cluster > /dev/null 2>&1; then
-        log_success "Cluster 'axum-cluster' already registered."
-        break
-    fi
-    sleep 2
-    # Try to register on last attempt or once manager is reachable
-    if docker exec axum_scylla_manager sctool version > /dev/null 2>&1; then
-        if ! docker exec axum_scylla_manager sctool status -c axum-cluster > /dev/null 2>&1; then
-            SCYLLA_USER=$(grep '^SCYLLA_USERNAME=' .env 2>/dev/null | cut -d= -f2 || echo "cassandra")
-            SCYLLA_PASS=$(grep '^SCYLLA_PASSWORD=' .env 2>/dev/null | cut -d= -f2 || echo "cassandra")
-            docker exec axum_scylla_manager sctool cluster add \
-                --host scylla1 \
-                --name axum-cluster \
-                --auth-token super-secret-token \
-                --username "$SCYLLA_USER" \
-                --password "$SCYLLA_PASS" && \
-            log_success "Cluster 'axum-cluster' registered with Scylla Manager." || \
-            log_warn "Manager registration failed - you can register manually with: sctool cluster add --host scylla1 --name axum-cluster --auth-token super-secret-token"
-            break
-        fi
-    fi
-done
-
-# 5. Summary
-echo ""
-echo "============================================="
-echo "   🎉 Deployment Complete"
-echo "============================================="
-echo "   - Swagger UI:  http://localhost:3000/swagger-ui/"
-echo "   - Health:      http://localhost:3000/health"
-echo "   - ScyllaDB:    localhost:9042"
-echo "   - Redis:       localhost:6379"
-echo "   - NATS:        localhost:4222"
-echo "   - Logs:        docker logs -f axum_backend"
-echo "============================================="
-
-if [ "$CLEAN_DB" = true ]; then
-    log_info "Note: Schema will be automatically recreated by the backend on startup."
-fi
-
-# 6. API Smoke Test
-if [ "$RUN_TEST" = true ]; then
-    run_smoke_test
-fi
+exit 0

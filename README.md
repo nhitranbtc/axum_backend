@@ -22,64 +22,148 @@ This project implements a **layered architecture** designed for maintainability 
 ### Prerequisites
 
 - **Rust**: 1.75+ (`rustup update`)
-- **Docker**: For running the database (PostgreSQL and ScyllaDB) and local development environment.
-- **Cargo Make** (Optional): For running workflows.
-
-### 🛠️ Setup & Run
-
-#### Option 1: Docker (Recommended)
-
-Bootstrap the entire environment (PostgreSQL + ScyllaDB + Redis + App + Monitoring):
-
-```bash
-./docker/backend/run_container.sh
-```
-
-This will:
-
-1. Start PostgreSQL & ScyllaDB containers
-2. Run `cargo check` and `cargo fmt`
-3. Build the release binary
-4. Launch the application container on `host` network
-
-#### Option 2: Local Development
-
-#### Start REST API Server (Port 3000)
-
-```bash
-cargo run
-```
-
-#### Start gRPC Server (Port 50051)
-
-```bash
-cargo run --bin grpc_server
-```
-
-#### Start gRPC Client (Example)
-
-```bash
-cargo run --bin grpc_client
-```
-
-**Access Points:**
-
-- **REST API**: `http://localhost:3000`
-- **gRPC Server**: `http://localhost:50051`
-- **Swagger UI**: `http://localhost:3000/swagger-ui/`
-- **Health Check**: `GET http://localhost:3000/api/health`
-
-### 📦 Build & Development
-
-We use distinct Cargo profiles for different stages:
-
-| Profile     | Command                         | Use Case                                        |
-| ----------- | ------------------------------- | ----------------------------------------------- |
-| **Dev**     | `cargo run`                     | Fast compilation, full debug info.              |
-| **Staging** | `cargo build --profile staging` | Optimized but with debug symbols for profiling. |
-| **Release** | `cargo build --release`         | Max performance, LTO, stripped symbols.         |
+- **Docker** + **Docker Compose**
 
 ---
+
+### 🐳 Docker Guide
+
+All container management is handled by a single script:
+
+```bash
+./docker/backend/run_container.sh [options]
+```
+
+#### Options
+
+| Flag        | Description                                                      |
+| ----------- | ---------------------------------------------------------------- |
+| `--single`  | Use a **single-node** ScyllaDB (default for local dev)           |
+| `--cluster` | Use a **3-node** ScyllaDB cluster _(default)_                    |
+| `--build`   | Force rebuild of the backend image _(implies `--clean`)_         |
+| `--clean`   | Drop the ScyllaDB keyspace and flush Redis before starting       |
+| `--stop`    | Stop and remove all containers                                   |
+| `--remove`  | Stop containers, remove volumes, and delete locally built images |
+| `--test`    | Run the full API smoke test after startup                        |
+| `--help`    | Show usage                                                       |
+
+---
+
+#### ▶️ Run — Single-Node ScyllaDB (local dev)
+
+```bash
+# First run: build image + start all services
+./docker/backend/run_container.sh --single --build
+
+# Subsequent runs: reuse existing image
+./docker/backend/run_container.sh --single
+```
+
+#### ▶️ Run — 3-Node ScyllaDB Cluster (staging / production-like)
+
+```bash
+# First run: build image + start cluster
+./docker/backend/run_container.sh --cluster --build
+
+# Subsequent runs
+./docker/backend/run_container.sh --cluster
+```
+
+> **Note:** `--cluster` is the default so you can also just run `./docker/backend/run_container.sh --build`.
+
+---
+
+#### 🧹 Clean & Rebuild
+
+```bash
+# Drop DB data and rebuild the image from scratch
+./docker/backend/run_container.sh --single --build
+./docker/backend/run_container.sh --cluster --build
+
+# Drop DB data only (no rebuild)
+./docker/backend/run_container.sh --single --clean
+```
+
+#### 🛑 Stop / Remove
+
+```bash
+# Stop all containers (data preserved)
+./docker/backend/run_container.sh --stop
+
+# Full teardown: containers + volumes + locally built images
+./docker/backend/run_container.sh --remove
+```
+
+---
+
+#### 🔍 Smoke Test (register → verify → login)
+
+```bash
+# Run E2E smoke test against the already-running stack
+./docker/backend/run_container.sh --test
+
+# Deploy single-node, build fresh, then smoke-test in one command
+./docker/backend/run_container.sh --single --build --test
+```
+
+---
+
+#### 📋 View Live Logs
+
+```bash
+# Follow backend application logs
+docker logs -f axum_backend
+
+# Tail the last 50 lines, then follow
+docker logs --tail 50 -f axum_backend
+
+# View ScyllaDB logs
+docker logs -f axum_scylla1
+
+# View Redis logs
+docker logs -f axum_redis
+
+# View NATS logs
+docker logs -f axum_nats
+```
+
+---
+
+#### 🌐 Service Access Points
+
+| Service            | URL / Address                       |
+| ------------------ | ----------------------------------- |
+| **REST API**       | `http://localhost:3000`             |
+| **Swagger UI**     | `http://localhost:3000/swagger-ui/` |
+| **Health Check**   | `http://localhost:3000/health`      |
+| **ScyllaDB CQL**   | `localhost:9042`                    |
+| **Redis**          | `localhost:6379`                    |
+| **NATS**           | `localhost:4222`                    |
+| **NATS Monitor**   | `http://localhost:8222`             |
+| **Scylla Manager** | `http://localhost:5080`             |
+
+---
+
+### � Local Development (without Docker)
+
+```bash
+# REST API server (port 3000)
+cargo run
+
+# gRPC server (port 50051)
+cargo run --bin grpc_server
+
+# NATS event subscriber
+cargo run --bin nats_client
+```
+
+### 📦 Build Profiles
+
+| Profile     | Command                         | Use Case                                   |
+| ----------- | ------------------------------- | ------------------------------------------ |
+| **Dev**     | `cargo run`                     | Fast compilation, full debug info          |
+| **Staging** | `cargo build --profile staging` | Optimised with debug symbols for profiling |
+| **Release** | `cargo build --release`         | Max performance, LTO, stripped symbols     |
 
 ## 🔧 Available Binaries
 
@@ -133,27 +217,136 @@ cargo run --bin nats_client
 
 ## 🧪 Testing
 
-### Integration Tests
+The test suite is split into five Cargo test binaries, each covering a distinct layer.  
+All tests use an **ephemeral in-process server** backed by a fresh ScyllaDB keyspace — no shared state, fully parallel-safe.
+
+---
+
+### 🔍 Smoke Test (Docker — Full E2E)
+
+Verifies the entire **register → verify → login** workflow against the running container:
 
 ```bash
-# Run all tests
-./tests/run_tests.sh all
-
-# Run specific category
-./tests/run_tests.sh authentication
-./tests/run_tests.sh users
-./tests/run_tests.sh redis
-
-# Run gRPC tests
-cargo test --test grpc_tests
-
-# Run Redis tests directly
-cargo test --test redis_tests
+./docker/backend/run_container.sh --test
 ```
 
-### Stress Testing
+> Spins up a unique test user, reads the confirmation code directly from ScyllaDB,
+> verifies the email, then asserts a JWT is returned at login.
 
-#### Bash Scripts (Quick & Easy)
+---
+
+### 🧪 API Tests (`tests/api_tests.rs`)
+
+HTTP-level integration tests — auth, users, cookies, health, preflight:
+
+```bash
+# Run all API tests
+cargo test --test api_tests
+
+# Run only the auth suite
+cargo test --test api_tests api::auth
+
+# Run a single named test
+cargo test --test api_tests test_register_success
+cargo test --test api_tests test_login_success
+cargo test --test api_tests test_login_wrong_credentials
+cargo test --test api_tests test_register_duplicate_email
+cargo test --test api_tests test_register_invalid_email
+cargo test --test api_tests test_set_password_too_short
+cargo test --test api_tests test_list_users_access_control
+cargo test --test api_tests test_concurrent_registrations
+cargo test --test api_tests test_forgot_password_flow
+cargo test --test api_tests test_resend_code_flow
+cargo test --test api_tests test_full_auth_flow
+cargo test --test api_tests test_login_with_code_flow
+
+# Run with output visible
+cargo test --test api_tests -- --nocapture
+```
+
+---
+
+### ⚙️ Integration Tests (`tests/integration_tests.rs`)
+
+Infrastructure-level tests — ScyllaDB, NATS, email:
+
+```bash
+# Run all integration tests
+cargo test --test integration_tests
+
+# Run by sub-module
+cargo test --test integration_tests integration::scylla
+cargo test --test integration_tests integration::nats
+cargo test --test integration_tests integration::email_tests
+
+# Run with output
+cargo test --test integration_tests -- --nocapture
+```
+
+---
+
+### 🗄️ Redis Tests (`tests/redis_tests.rs`)
+
+Cache-aside, distributed locking, and cluster behaviour:
+
+```bash
+# Run all Redis tests
+cargo test --test redis_tests
+
+# Run by sub-module
+cargo test --test redis_tests redis::cache
+cargo test --test redis_tests redis::locking
+cargo test --test redis_tests redis::cluster
+
+# Run with output
+cargo test --test redis_tests -- --nocapture
+```
+
+---
+
+### 📡 gRPC Tests (`tests/grpc_tests.rs`)
+
+gRPC service integration and stress tests:
+
+```bash
+# Run all gRPC tests
+cargo test --test grpc_tests
+
+# Run standard (non-ignored) tests only
+cargo test --test grpc_tests grpc
+
+# Run stress tests (marked #[ignore] — opt-in)
+cargo test --test grpc_tests -- --ignored --nocapture
+```
+
+---
+
+### 📈 Load Tests (`tests/load_tests.rs`)
+
+High-throughput load scenarios (marked `#[ignore]` by default):
+
+```bash
+# Run load tests explicitly
+cargo test --test load_tests -- --ignored --nocapture
+```
+
+---
+
+### 🔄 Run All Test Suites At Once
+
+```bash
+cargo test --tests
+```
+
+> **Tip:** Run with `-- --nocapture` appended to see tracing output:
+>
+> ```bash
+> cargo test --tests -- --nocapture
+> ```
+
+---
+
+### Stress Testing (Bash Scripts)
 
 ```bash
 # gRPC CreateUser stress test
@@ -162,15 +355,8 @@ cargo test --test redis_tests
 # REST API Register stress test
 ./scripts/stress_test_register_user.sh
 
-# Cleanup test users
+# Cleanup stress-test users
 ./scripts/cleanup_stress_test_users.sh
-```
-
-#### Rust Integration Tests
-
-```bash
-# Run stress tests (ignored by default)
-cargo test --test grpc_tests stress -- --ignored --nocapture
 ```
 
 📖 **[Stress Testing Guide](scripts/GRPC-README.md)**
@@ -338,6 +524,7 @@ axum_backend/
 - **Test Containers**: testcontainers
 
 ---
+
 ## 🤝 Contributing
 
 1. **Follow the Architecture**: Keep logic in the correct layer.

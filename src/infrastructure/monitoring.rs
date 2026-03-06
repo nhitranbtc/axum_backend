@@ -16,6 +16,7 @@ pub struct SystemMetrics {
 }
 
 impl SystemMonitor {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut sys = System::new_all();
         sys.refresh_all();

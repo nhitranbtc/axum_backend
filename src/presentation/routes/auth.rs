@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use crate::presentation::middleware::auth::{auth_middleware, AuthState};
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_auth_routes<
     R: AuthRepository + 'static,
     C: crate::infrastructure::cache::CacheRepository + ?Sized + Send + Sync + 'static,

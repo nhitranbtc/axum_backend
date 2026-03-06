@@ -1,88 +1,53 @@
 use anyhow::{Context, Result};
-use scylla::statement::prepared::PreparedStatement;
+use scylla::client::caching_session::CachingSession;
 use std::sync::Arc;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use super::super::connection::ScyllaSession;
-use super::super::models::UserEventRow;
+use crate::infrastructure::database::scylla::{
+    connection::ScyllaSession,
+    models::UserEventRow,
+    operations::prelude::*,
+};
 
-/// Repository for managing user events in ScyllaDB.
+/// Repository for managing user events in ScyllaDB (time-series data).
 ///
-/// Queries are prepared on construction so ScyllaDB only parses and plans them once.
+/// Holds only an `Arc<CachingSession>` — no `PreparedStatement` fields.
 pub struct EventRepository {
-    session: Arc<ScyllaSession>,
-    ps_insert: PreparedStatement,
-    ps_count: PreparedStatement,
+    session: Arc<CachingSession>,
 }
 
 impl EventRepository {
-    /// Create a new event repository, preparing all statements upfront.
-    pub async fn new(session: Arc<ScyllaSession>) -> Result<Self> {
-        let ps_insert = session
-            .session()
-            .prepare(
-                "INSERT INTO user_events (user_id, event_id, event_type, event_data, created_at) \
-                 VALUES (?, ?, ?, ?, ?)",
-            )
-            .await
-            .context("Failed to prepare event INSERT")?;
-
-        let ps_count = session
-            .session()
-            .prepare("SELECT COUNT(*) FROM user_events WHERE user_id = ?")
-            .await
-            .context("Failed to prepare event COUNT")?;
-
-        Ok(Self { session, ps_insert, ps_count })
+    pub fn new(session: Arc<ScyllaSession>) -> Self {
+        Self { session: session.session() }
     }
 
-    /// Save a user event.
+    /// Persist a user event.
     pub async fn save_event(&self, event: &UserEventRow) -> Result<()> {
-        debug!("Saving event for user {}: {}", event.user_id, event.event_type);
+        debug!("Saving event '{}' for user {}", event.event_type, event.user_id);
 
-        let created_at_ms = event.created_at.timestamp_millis();
-
-        self.session
-            .session()
-            .execute_unpaged(
-                &self.ps_insert,
-                (
-                    event.user_id,
-                    event.event_id,
-                    &event.event_type,
-                    &event.event_data,
-                    scylla::value::CqlTimestamp(created_at_ms),
-                ),
-            )
+        event.insert()
+            .execute(&self.session)
             .await
             .context("Failed to insert event")?;
 
-        info!("Event saved: {} for user {}", event.event_type, event.user_id);
+        info!("Event '{}' saved for user {}", event.event_type, event.user_id);
         Ok(())
     }
 
-    /// Return the total number of events recorded for a user.
+    /// Returns the total number of events recorded for a user.
     pub async fn get_user_events_count(&self, user_id: Uuid) -> Result<i64> {
         debug!("Fetching event count for user {}", user_id);
 
-        let result = self
-            .session
-            .session()
-            .execute_unpaged(&self.ps_count, (user_id,))
+        let result = execute_unpaged(&self.session, UserEventRow::COUNT_BY_USER_QUERY, (user_id,))
             .await
-            .context("Failed to query user events")?;
-
-        let rows = result
+            .context("Failed to query user events")?
             .into_rows_result()
             .context("Failed to read event COUNT result")?;
 
-        let count: i64 = rows
-            .rows::<(i64,)>()
-            .context("Failed to deserialize COUNT row")?
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("No COUNT result row"))??
-            .0;
+        let (count,): (i64,) = result
+            .first_row()
+            .context("No COUNT result row")?;
 
         Ok(count)
     }

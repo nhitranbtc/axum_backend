@@ -44,18 +44,50 @@
     ]
   },
   "hooks": {
-    "PostToolUse": [
+    "PreToolUse": [
       {
-        "matcher": "Edit|Write",
-        "filePattern": "**/*.rs",
-        "command": "cargo fmt -- --quiet",
-        "description": "Auto-format Rust files after edit"
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '\"file_path\"\\s*:\\s*\"[^\"]*\\.env\"'; then echo 'BLOCKED: Reading .env files is not allowed — contains secrets'; exit 2; fi",
+            "description": "Block reading .env files to protect secrets"
+          }
+        ]
       },
       {
         "matcher": "Edit|Write",
-        "filePattern": "**/*.rs",
-        "command": "cargo clippy --quiet -- -D warnings 2>&1 | head -30",
-        "description": "Run clippy lint after editing Rust files"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '\"file_path\"\\s*:\\s*\"[^\"]*\\.env\"'; then echo 'BLOCKED: Writing .env files is not allowed — contains secrets'; exit 2; fi",
+            "description": "Block writing/editing .env files to protect secrets"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo fmt -- --quiet",
+            "filePattern": "**/*.rs",
+            "description": "Auto-format Rust files after edit"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo clippy --quiet -- -D warnings 2>&1 | head -30",
+            "filePattern": "**/*.rs",
+            "description": "Run clippy lint after editing Rust files"
+          }
+        ]
       }
     ]
   }

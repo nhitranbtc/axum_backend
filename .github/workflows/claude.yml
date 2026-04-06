@@ -48,3 +48,24 @@ jobs:
           # or https://code.claude.com/docs/en/cli-reference for available options
           # claude_args: '--allowed-tools Bash(gh pr:*)'
 
+          custom_instructions: |
+            The project is already set up with all dependencies installed.
+            The server is already running at http://localhost:3000.
+            Logs from it are begin written to logs.txt. If needed, you can query the db with the 'sqlite3' cli. 
+            If needed, use the mcp__playwright set of tools to launch a browser and interact with the application.
+
+          mpc_config: |
+            {
+              "mcpServers": {
+                "playwright": {
+                  "command": "npx",
+                  "args": [
+                    "@playwright/mcp@latest",
+                    "--allowed-origins",
+                    "http://localhost:3000;cdn.tailwindcss.com;esm.sh"
+                  ]
+                }
+              }
+            }
+
+          allowed_tools: "Bash(npm:*),Bash(sqlite3:*),mcp__playwright__browser_snapshot,mcp__playwright__browser_click,mcp__playwright__browser_fill,mcp__playwright__browser_goto,mcp__playwright__browser_press,mcp__playwright__browser_type,mcp__playwright__browser_wait_for_selector,mcp__playwright__browser_close,mcp__playwright__browser_new_page,mcp__playwright__browser_new_context,mcp__playwright__browser_close_context,mcp__playwright__browser_close_all_contexts"

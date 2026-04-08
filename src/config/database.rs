@@ -55,9 +55,11 @@ impl DatabaseConfig {
         }
     }
 
+    #[allow(clippy::expect_used)]
     pub fn create_pool(&self, database_url: &str) -> Pool<AsyncPgConnection> {
         let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
 
+        // SAFETY: Called once at startup. Pool creation failure is unrecoverable.
         Pool::builder(config)
             .max_size(self.max_connections)
             .wait_timeout(Some(self.connect_timeout))

@@ -1,6 +1,8 @@
 name: Claude Code Review
 
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
     paths:
@@ -16,7 +18,7 @@ env:
 
 jobs:
   build-and-test:
-    if: github.event.pull_request.draft == false
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
 
     services:
@@ -54,16 +56,67 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # ==================================================================
+      # Code Style — source of truth: .claude/rules/code-style.md
+      # Compile-time rules: src/lib.rs #![deny] + clippy.toml thresholds
+      # ==================================================================
+
       - name: Check formatting
         run: cargo fmt -- --check
 
-      - name: Run clippy
+      - name: Lint
         run: cargo clippy -- -D warnings
 
-      - name: Run unit tests
+      # ==================================================================
+      # Code Rules — ref: .claude/rules/code-style.md
+      #
+      # These checks enforce rules that clippy/fmt cannot catch.
+      # To add or modify rules, edit .claude/rules/code-style.md and
+      # update the corresponding check below.
+      # ==================================================================
+
+      - name: "Rule: file size (code-style.md #File & Function Size)"
+        run: |
+          max=800
+          failed=0
+          while IFS= read -r f; do
+            n=$(wc -l < "$f")
+            [ "$n" -gt "$max" ] && echo "::error file=$f::$n lines (max $max)" && failed=1
+          done < <(find src -name '*.rs' -type f)
+          exit $failed
+
+      - name: "Rule: no blocking I/O in async (code-style.md #Async Safety)"
+        run: |
+          grep -rn \
+            -e 'std::fs::read' -e 'std::fs::write' -e 'std::fs::remove' \
+            -e 'std::thread::sleep' -e 'std::process::Command::new' \
+            src/ --include='*.rs' \
+            && { echo "::error::Blocking I/O in async code — see .claude/rules/code-style.md #Async Safety"; exit 1; } \
+            || true
+
+      - name: "Rule: DDD layer boundaries (code-style.md #Architecture Layer Rules)"
+        run: |
+          failed=0
+          # domain/ must not import infrastructure, presentation, diesel, axum
+          grep -rn -e 'use crate::infrastructure' -e 'use crate::presentation' \
+            -e 'use diesel::' -e 'use axum::' -e 'use diesel_async::' \
+            src/domain/ --include='*.rs' \
+            && { echo "::error::domain/ layer violation"; failed=1; } || true
+          # application/ must not import infrastructure::database, presentation, diesel, axum
+          grep -rn -e 'use crate::infrastructure::database' -e 'use crate::presentation' \
+            -e 'use diesel::' -e 'use axum::' -e 'use diesel_async::' \
+            src/application/ --include='*.rs' \
+            && { echo "::error::application/ layer violation"; failed=1; } || true
+          exit $failed
+
+      # ==================================================================
+      # Tests
+      # ==================================================================
+
+      - name: Unit tests
         run: cargo test --lib
 
-      - name: Run API and integration tests
+      - name: API and integration tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/axum_backend_test
           JWT_SECRET: ci-test-secret-that-is-at-least-thirty-two-bytes-long
@@ -72,6 +125,7 @@ jobs:
         run: cargo test --test api_tests --test integration_tests
 
   claude-review:
+    if: github.event_name == 'pull_request'
     needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
@@ -96,15 +150,24 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             Review this pull request for the axum_backend Rust project.
-            The build and all tests have already passed.
+            The build, code-style checks, and all tests have already passed CI.
 
-            Focus on:
-            - Error handling: no unwrap()/expect() in production code, proper Result propagation
-            - Async safety: no blocking I/O in async contexts without spawn_blocking
-            - Architecture: domain layer has zero infra deps, application depends on traits only
-            - Security: no hardcoded secrets, RBAC checks in handlers, parameterized queries
-            - CQRS: new write ops in commands/, read ops in queries/, not in legacy use_cases/
+            CI already enforces these rules automatically:
+            - cargo fmt (rustfmt.toml: max_width=100, 4-space indent)
+            - cargo clippy -D warnings (#![deny] unwrap_used, expect_used, panic, todo)
+            - clippy.toml thresholds (cognitive_complexity=25, too_many_lines=50, nesting=6)
+            - File size limit (800 lines max)
+            - No blocking I/O in async code (std::fs, std::thread::sleep, std::sync::Mutex)
+            - DDD layer boundaries (domain/ has no infra deps, application/ no concrete types)
 
-            Reference CLAUDE.md and .claude/rules/code-style.md for project conventions.
+            Focus your review on what CI cannot catch:
+            - Business logic correctness and edge cases
+            - Error propagation: structured errors with From impls, not .to_string() erasure
+            - Security: RBAC checks in handlers, secrets from env vars, parameterized queries
+            - Ownership: unnecessary .clone(), &str vs String in params, Arc usage
+            - CQRS: new write ops in commands/, read ops in queries/, not legacy use_cases/
+            - Value objects: invariants at construction, FromStr not custom parse
+
+            Reference .claude/rules/code-style.md for the full rule set.
             Flag CRITICAL issues as blockers. Provide actionable suggestions with code examples.
 

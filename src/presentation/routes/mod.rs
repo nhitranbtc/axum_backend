@@ -130,8 +130,9 @@ pub fn create_router(
     // Create repositories
     let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()));
 
-    // Create JWT manager — propagate error as panic at startup since this is
-    // called once during initialization and a bad secret is unrecoverable.
+    // SAFETY: Called once at startup. A bad JWT secret is unrecoverable — failing
+    // here with a clear message is the correct behavior.
+    #[allow(clippy::expect_used)]
     let jwt_manager = Arc::new(
         JwtManager::new(
             jwt_secret,

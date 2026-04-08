@@ -56,22 +56,21 @@ impl<R: AuthRepository> LoginUseCase<R> {
 
         // Check Code
         if let Some(c) = code {
-            if let Some(user_code) = &user.confirmation_code {
-                if user_code == &c {
-                    if let Some(expires_at) = user.confirmation_code_expires_at {
-                        if chrono::Utc::now() <= expires_at {
-                            credentials_valid = true;
-                            // Consume code to prevent replay
-                            user.confirmation_code = None;
-                            user.confirmation_code_expires_at = None;
-                            // We need to save this change!
-                            self.auth_repo
-                                .update_user(&user)
-                                .await
-                                .map_err(|e| LoginError::RepositoryError(e.to_string()))?;
-                        }
-                    }
-                }
+            let code_matches =
+                user.confirmation_code.as_ref().is_some_and(|user_code| user_code == &c);
+            let not_expired = user
+                .confirmation_code_expires_at
+                .is_some_and(|expires_at| chrono::Utc::now() <= expires_at);
+
+            if code_matches && not_expired {
+                credentials_valid = true;
+                // Consume code to prevent replay
+                user.confirmation_code = None;
+                user.confirmation_code_expires_at = None;
+                self.auth_repo
+                    .update_user(&user)
+                    .await
+                    .map_err(|e| LoginError::RepositoryError(e.to_string()))?;
             }
         }
         // Check Password if code didn't validate (or wasn't provided)

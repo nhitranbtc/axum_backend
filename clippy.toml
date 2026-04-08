@@ -1,0 +1,20 @@
+# Clippy configuration for axum_backend
+# Enforces code quality standards defined in .claude/rules/code-style.md
+
+# Function complexity threshold (proxy for ~50 line limit)
+cognitive-complexity-threshold = 25
+
+# Max lines for a single function body
+too-many-lines-threshold = 50
+
+# Max number of function arguments before suggesting a struct
+too-many-arguments-threshold = 8
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Max nesting depth for control flow
+excessive-nesting-threshold = 6
+
+# Enforce large error types are boxed (> 128 bytes)
+large-error-threshold = 128

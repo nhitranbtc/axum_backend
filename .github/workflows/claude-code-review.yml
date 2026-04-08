@@ -150,24 +150,16 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             Review this pull request for the axum_backend Rust project.
-            The build, code-style checks, and all tests have already passed CI.
+            CI has already passed: formatting, clippy, code-style checks, and all tests.
+            Do NOT re-check anything CI enforces — focus only on what automation cannot catch.
 
-            CI already enforces these rules automatically:
-            - cargo fmt (rustfmt.toml: max_width=100, 4-space indent)
-            - cargo clippy -D warnings (#![deny] unwrap_used, expect_used, panic, todo)
-            - clippy.toml thresholds (cognitive_complexity=25, too_many_lines=50, nesting=6)
-            - File size limit (800 lines max)
-            - No blocking I/O in async code (std::fs, std::thread::sleep, std::sync::Mutex)
-            - DDD layer boundaries (domain/ has no infra deps, application/ no concrete types)
-
-            Focus your review on what CI cannot catch:
+            Read .claude/rules/code-style.md for the full rule set, then review for:
             - Business logic correctness and edge cases
             - Error propagation: structured errors with From impls, not .to_string() erasure
-            - Security: RBAC checks in handlers, secrets from env vars, parameterized queries
+            - Security: RBAC checks in handlers, secrets from env vars, no leaked internals
             - Ownership: unnecessary .clone(), &str vs String in params, Arc usage
-            - CQRS: new write ops in commands/, read ops in queries/, not legacy use_cases/
+            - CQRS migration: new writes in commands/, reads in queries/, not legacy use_cases/
             - Value objects: invariants at construction, FromStr not custom parse
 
-            Reference .claude/rules/code-style.md for the full rule set.
             Flag CRITICAL issues as blockers. Provide actionable suggestions with code examples.
 

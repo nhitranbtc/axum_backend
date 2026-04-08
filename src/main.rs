@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.jwt_issuer.clone(),
         config.jwt_audience.clone(),
         config.confirm_code_expiry,
+        config.is_production,
         prometheus_layer,
         metric_handle,
         email_service,

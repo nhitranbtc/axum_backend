@@ -1,6 +1,6 @@
 use crate::common::*;
 use reqwest::StatusCode;
-use serde_json::{json, Value};
+use serde_json::json;
 
 #[tokio::test]
 async fn test_cookie_auth_login_flow() {

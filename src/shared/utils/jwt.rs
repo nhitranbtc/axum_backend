@@ -41,19 +41,21 @@ impl JwtManager {
         refresh_token_expiry: i64,
         issuer: String,
         audience: String,
-    ) -> Self {
+    ) -> Result<Self, JwtError> {
         // Validate secret strength (minimum 32 bytes for HS256)
         if secret.len() < 32 {
-            panic!("JWT secret must be at least 32 characters for security");
+            return Err(JwtError::TokenCreation(
+                "JWT secret must be at least 32 characters for security".to_string(),
+            ));
         }
 
-        Self {
+        Ok(Self {
             secret,
             access_token_expiry: Duration::seconds(access_token_expiry),
             refresh_token_expiry: Duration::seconds(refresh_token_expiry),
             issuer,
             audience,
-        }
+        })
     }
 
     pub fn create_access_token(&self, user_id: Uuid) -> Result<String, JwtError> {
@@ -139,7 +141,8 @@ mod tests {
             86400,
             "test-issuer".to_string(),
             "test-audience".to_string(),
-        );
+        )
+        .unwrap();
         let user_id = Uuid::new_v4();
 
         let token = jwt_manager.create_access_token(user_id).unwrap();
@@ -159,7 +162,8 @@ mod tests {
             86400,
             "test-issuer".to_string(),
             "test-audience".to_string(),
-        );
+        )
+        .unwrap();
         let user_id = Uuid::new_v4();
 
         let token = jwt_manager.create_refresh_token(user_id).unwrap();

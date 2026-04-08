@@ -22,7 +22,9 @@ impl<R: AuthRepository> LogoutUseCase<R> {
 
     /// Logout from current session (revoke specific refresh token)
     pub async fn execute(&self, refresh_token: &str) -> Result<(), LogoutError> {
-        self.auth_repo.revoke_refresh_token(refresh_token).await.map_err(|e| match e {
+        // Hash the raw token to match the stored hash
+        let token_hash = crate::shared::utils::hash_token(refresh_token);
+        self.auth_repo.revoke_refresh_token(&token_hash).await.map_err(|e| match e {
             AuthRepositoryError::TokenNotFound => LogoutError::TokenNotFound,
             _ => LogoutError::RepositoryError(e.to_string()),
         })

@@ -29,13 +29,16 @@ impl RepositoryImpl {
     }
 
     /// Helper: Convert UserModel to domain User entity
-    fn user_model_to_entity(model: UserModel) -> User {
-        User::from_existing(
+    fn user_model_to_entity(model: UserModel) -> Result<User, AuthRepositoryError> {
+        let email = Email::parse(&model.email).map_err(|_| {
+            AuthRepositoryError::DatabaseError(format!(
+                "Invalid email in database: {}",
+                model.email
+            ))
+        })?;
+        Ok(User::from_existing(
             UserId::from_uuid(model.id),
-            Email::parse(&model.email).unwrap_or_else(|_| {
-                // This should never happen in production as emails are validated before insert
-                panic!("Invalid email in database: {}", model.email)
-            }),
+            email,
             model.name,
             model.password_hash,
             UserRole::parse(&model.role).unwrap_or_default(),
@@ -46,7 +49,7 @@ impl RepositoryImpl {
             model.last_login,
             model.created_at,
             model.updated_at,
-        )
+        ))
     }
 
     /// Helper: Convert RefreshTokenModel to domain RefreshToken entity
@@ -90,7 +93,7 @@ impl AuthRepository for RepositoryImpl {
             .optional()
             .map_err(|e| AuthRepositoryError::DatabaseError(e.to_string()))?;
 
-        Ok(result.map(Self::user_model_to_entity))
+        result.map(Self::user_model_to_entity).transpose()
     }
 
     async fn create_user(
@@ -139,9 +142,11 @@ impl AuthRepository for RepositoryImpl {
                 }
             })?;
 
+        let email_vo = Email::parse(email)
+            .map_err(|_| AuthRepositoryError::DatabaseError(format!("Invalid email: {}", email)))?;
         Ok(User::from_existing(
             UserId::from_uuid(id),
-            Email::parse(email).unwrap(),
+            email_vo,
             name.to_string(),
             password_hash,
             UserRole::default(),

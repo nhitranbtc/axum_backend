@@ -1,6 +1,7 @@
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use sysinfo::System;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct SystemMonitor {
@@ -15,6 +16,12 @@ pub struct SystemMetrics {
     pub uptime: u64,
 }
 
+impl Default for SystemMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SystemMonitor {
     pub fn new() -> Self {
         let mut sys = System::new_all();
@@ -22,8 +29,8 @@ impl SystemMonitor {
         Self { sys: Arc::new(Mutex::new(sys)) }
     }
 
-    pub fn get_metrics(&self) -> SystemMetrics {
-        let mut sys = self.sys.lock().unwrap();
+    pub async fn get_metrics(&self) -> SystemMetrics {
+        let mut sys = self.sys.lock().await;
 
         // Refresh necessary components
         sys.refresh_cpu_all();

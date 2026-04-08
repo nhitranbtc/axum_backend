@@ -17,13 +17,19 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
+    Extension, Json,
 };
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use axum_extra::extract::CookieJar;
 use std::sync::Arc;
 use time::Duration;
 use validator::Validate; // fast dependency check: do I have time crate? axum-extra uses time.
+
+/// Runtime cookie security configuration driven by environment.
+#[derive(Debug, Clone)]
+pub struct CookieConfig {
+    pub secure: bool,
+}
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -101,6 +107,7 @@ pub async fn register<R: AuthRepository>(
 )]
 pub async fn login<R: AuthRepository>(
     State(use_case): State<Arc<LoginUseCase<R>>>,
+    Extension(cookie_config): Extension<Arc<CookieConfig>>,
     jar: CookieJar,
     Json(payload): Json<LoginRequest>,
 ) -> Result<(CookieJar, Json<ApiResponse<AuthResponse>>), AuthError> {
@@ -113,12 +120,12 @@ pub async fn login<R: AuthRepository>(
         .await
         .map_err(|e| AuthError::LoginError(e.to_string()))?;
 
-    // Set HttpOnly cookies
+    // Set HttpOnly cookies — secure flag driven by runtime config
     let access_cookie = Cookie::build(("access_token", response.access_token.clone()))
         .http_only(true)
         .path("/")
         .same_site(SameSite::Lax)
-        .secure(false) // Set to true in production
+        .secure(cookie_config.secure)
         .max_age(Duration::seconds(response.expires_in))
         .build();
 
@@ -126,7 +133,7 @@ pub async fn login<R: AuthRepository>(
         .http_only(true)
         .path("/")
         .same_site(SameSite::Lax)
-        .secure(false) // Set to true in production
+        .secure(cookie_config.secure)
         .max_age(Duration::days(7))
         .build();
 

@@ -3,25 +3,80 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+    paths:
+      - "src/**/*.rs"
+      - "migrations/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "diesel.toml"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
 
 jobs:
-  claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+  build-and-test:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: axum_backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run unit tests
+        run: cargo test --lib
+
+      - name: Run API and integration tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/axum_backend_test
+          JWT_SECRET: ci-test-secret-that-is-at-least-thirty-two-bytes-long
+          SERVER_HOST: 127.0.0.1
+          SERVER_PORT: 3000
+        run: cargo test --test api_tests --test integration_tests
+
+  claude-review:
+    needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
 
@@ -29,16 +84,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Copy Claude config
+        run: cp -r .claude/ ~/.claude/
 
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          prompt: |
+            Review this pull request for the axum_backend Rust project.
+            The build and all tests have already passed.
+
+            Focus on:
+            - Error handling: no unwrap()/expect() in production code, proper Result propagation
+            - Async safety: no blocking I/O in async contexts without spawn_blocking
+            - Architecture: domain layer has zero infra deps, application depends on traits only
+            - Security: no hardcoded secrets, RBAC checks in handlers, parameterized queries
+            - CQRS: new write ops in commands/, read ops in queries/, not in legacy use_cases/
+
+            Reference CLAUDE.md and .claude/rules/code-style.md for project conventions.
+            Flag CRITICAL issues as blockers. Provide actionable suggestions with code examples.
 

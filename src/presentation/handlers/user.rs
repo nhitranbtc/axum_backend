@@ -39,7 +39,8 @@ pub async fn import_users<R: AuthRepository>(
     State(use_case): State<Arc<ImportUsersUseCase<R>>>,
 ) -> Result<impl IntoResponse, AppError> {
     let csv_path = "import/users.csv";
-    let csv_data = std::fs::read(csv_path)
+    let csv_data = tokio::fs::read(csv_path)
+        .await
         .map_err(|e| AppError::Config(format!("Failed to read CSV file: {}", e)))?;
 
     let count = use_case

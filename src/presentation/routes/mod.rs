@@ -122,7 +122,9 @@ pub fn create_router(
     jwt_issuer: String,
     jwt_audience: String,
     confirm_code_expiry: i64,
-    is_production: bool,
+    cookie_secure: bool,
+    rate_limit_per_second: u64,
+    rate_limit_burst_size: u32,
     prometheus_layer: PrometheusMetricLayer<'static>,
     metric_handle: PrometheusHandle,
     email_service: Arc<dyn crate::application::services::email::EmailService>,
@@ -163,9 +165,9 @@ pub fn create_router(
     // Monitoring Setup
     let system_monitor = Arc::new(SystemMonitor::new());
 
-    // Cookie security config driven by runtime environment
+    // Cookie security config driven by COOKIE_SECURE env var (falls back to is_production)
     let cookie_config =
-        Arc::new(crate::presentation::handlers::auth::CookieConfig { secure: is_production });
+        Arc::new(crate::presentation::handlers::auth::CookieConfig { secure: cookie_secure });
 
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -191,6 +193,8 @@ pub fn create_router(
                 )),
                 jwt_manager.clone(),
                 cookie_config,
+                rate_limit_per_second,
+                rate_limit_burst_size,
             ),
         )
         .nest("/api/users", user_routes(pool, auth_repo, jwt_manager))

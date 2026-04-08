@@ -79,15 +79,8 @@ impl<R: AuthRepository> RegisterUseCase<R> {
             return Err(RegisterError::EmailAlreadyExists);
         }
 
-        // Generate Confirmation Code
-        // Simple 6-digit code
-        // In production use a proper CSPRNG.
-        use rand::Rng;
-        let confirmation_code: String = rand::thread_rng()
-            .sample_iter(&rand::distributions::Uniform::new(0, 10))
-            .take(6)
-            .map(|x| x.to_string())
-            .collect();
+        // Generate Confirmation Code (CSPRNG, 8-char alphanumeric)
+        let confirmation_code = crate::shared::utils::generate_confirmation_code();
 
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(self.confirm_code_expiry);
 

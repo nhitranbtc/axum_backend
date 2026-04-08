@@ -104,10 +104,11 @@ impl<R: AuthRepository> LoginUseCase<R> {
             .create_refresh_token(*user.id.as_uuid())
             .map_err(|e| LoginError::TokenCreationError(e.to_string()))?;
 
-        // Store refresh token
+        // Store refresh token (hash before storing to protect against DB breach)
+        let token_hash = crate::shared::utils::hash_token(&refresh_token);
         let refresh_token_entity = RefreshToken::new(
             *user.id.as_uuid(),
-            refresh_token.clone(),
+            token_hash,
             chrono::Utc::now() + self.jwt_manager.get_refresh_token_expiry(),
         );
 

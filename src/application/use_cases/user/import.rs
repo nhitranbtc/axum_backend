@@ -44,9 +44,13 @@ impl<R: AuthRepository + 'static> ImportUsersUseCase<R> {
         for result in rdr.deserialize::<CsvUserRecord>() {
             let record = result.map_err(|e| ImportUsersError::CsvError(e.to_string()))?;
 
-            // Hash password
-            let password_hash = PasswordManager::hash(&record.password)
-                .map_err(|e| ImportUsersError::Internal(e.to_string()))?;
+            // Hash password — Argon2 is CPU-heavy, run off the async executor
+            let password = record.password.clone();
+            let password_hash =
+                tokio::task::spawn_blocking(move || PasswordManager::hash(&password))
+                    .await
+                    .map_err(|e| ImportUsersError::Internal(e.to_string()))?
+                    .map_err(|e| ImportUsersError::Internal(e.to_string()))?;
 
             // Spawn a new actor (process) for every user
             let actor_impl = UserCreationActor::new(self.auth_repo.clone());

@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub jwt_audience: String,
     pub confirm_code_expiry: i64,
     pub rust_log: String,
+    pub is_production: bool,
     pub db_config: DatabaseConfig,
 }
 
@@ -30,7 +31,7 @@ impl AppConfig {
                 .parse()
                 .map_err(|_| ConfigError::InvalidPort)?,
             jwt_secret: env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "dev-secret-change-in-production".to_string()),
+                .map_err(|_| ConfigError::MissingEnvVar("JWT_SECRET".to_string()))?,
             jwt_access_expiry: env::var("JWT_ACCESS_EXPIRY")
                 .unwrap_or_else(|_| "3600".to_string())
                 .parse()
@@ -47,6 +48,9 @@ impl AppConfig {
                 .parse()
                 .map_err(|_| ConfigError::InvalidTokenExpiry)?,
             rust_log: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            is_production: env::var("ENVIRONMENT")
+                .unwrap_or_else(|_| "development".to_string())
+                .eq_ignore_ascii_case("production"),
             db_config: DatabaseConfig::from_env(),
         })
     }

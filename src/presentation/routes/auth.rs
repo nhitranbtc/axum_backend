@@ -4,13 +4,14 @@ use crate::{
         VerifyEmailUseCase,
     },
     domain::repositories::AuthRepository,
-    presentation::handlers::auth,
+    presentation::handlers::auth::{self, CookieConfig},
 };
-use axum::{middleware, routing::post, Router};
+use axum::{middleware, routing::post, Extension, Router};
 use std::sync::Arc;
 
 use crate::presentation::middleware::auth::{auth_middleware, AuthState};
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_auth_routes<R: AuthRepository + 'static>(
     register_uc: Arc<RegisterUseCase<R>>,
     login_uc: Arc<LoginUseCase<R>>,
@@ -20,6 +21,7 @@ pub fn create_auth_routes<R: AuthRepository + 'static>(
     forgot_password_uc: Arc<ForgotPasswordUseCase<R>>,
     resend_code_uc: Arc<crate::application::use_cases::ResendConfirmCodeUseCase<R>>,
     jwt_manager: Arc<crate::shared::utils::jwt::JwtManager>,
+    cookie_config: Arc<CookieConfig>,
 ) -> Router {
     // Public routes (no authentication required)
     let public_routes = Router::new()
@@ -45,6 +47,9 @@ pub fn create_auth_routes<R: AuthRepository + 'static>(
         .with_state(logout_uc.clone())
         .layer(middleware::from_fn_with_state(auth_state, auth_middleware));
 
-    // Combine routes
-    Router::new().merge(public_routes).merge(protected_routes)
+    // Combine routes — attach cookie config as extension for login handler
+    Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .layer(Extension(cookie_config))
 }

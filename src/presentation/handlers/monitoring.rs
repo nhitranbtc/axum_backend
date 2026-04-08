@@ -6,5 +6,5 @@ use std::sync::Arc;
 pub async fn system_health(
     Extension(monitor): Extension<Arc<SystemMonitor>>,
 ) -> Json<SystemMetrics> {
-    Json(monitor.get_metrics())
+    Json(monitor.get_metrics().await)
 }

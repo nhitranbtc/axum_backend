@@ -113,6 +113,7 @@ impl Modify for SecurityAddon {
 }
 
 /// Create the main application router
+#[allow(clippy::too_many_arguments)]
 pub fn create_router(
     pool: DbPool,
     jwt_secret: String,
@@ -121,6 +122,7 @@ pub fn create_router(
     jwt_issuer: String,
     jwt_audience: String,
     confirm_code_expiry: i64,
+    is_production: bool,
     prometheus_layer: PrometheusMetricLayer<'static>,
     metric_handle: PrometheusHandle,
     email_service: Arc<dyn crate::application::services::email::EmailService>,
@@ -128,14 +130,18 @@ pub fn create_router(
     // Create repositories
     let auth_repo = Arc::new(AuthRepositoryImpl::new(pool.clone()));
 
-    // Create JWT manager
-    let jwt_manager = Arc::new(JwtManager::new(
-        jwt_secret,
-        jwt_access_expiry,
-        jwt_refresh_expiry,
-        jwt_issuer,
-        jwt_audience,
-    ));
+    // Create JWT manager — propagate error as panic at startup since this is
+    // called once during initialization and a bad secret is unrecoverable.
+    let jwt_manager = Arc::new(
+        JwtManager::new(
+            jwt_secret,
+            jwt_access_expiry,
+            jwt_refresh_expiry,
+            jwt_issuer,
+            jwt_audience,
+        )
+        .expect("Failed to create JwtManager — check JWT_SECRET length (min 32 chars)"),
+    );
 
     // Create use cases
     let register_uc = Arc::new(RegisterUseCase::new(
@@ -155,6 +161,10 @@ pub fn create_router(
 
     // Monitoring Setup
     let system_monitor = Arc::new(SystemMonitor::new());
+
+    // Cookie security config driven by runtime environment
+    let cookie_config =
+        Arc::new(crate::presentation::handlers::auth::CookieConfig { secure: is_production });
 
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -179,6 +189,7 @@ pub fn create_router(
                     confirm_code_expiry,
                 )),
                 jwt_manager.clone(),
+                cookie_config,
             ),
         )
         .nest("/api/users", user_routes(pool, auth_repo, jwt_manager))

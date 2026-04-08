@@ -117,8 +117,10 @@ impl TestServer {
             jwt_refresh_expiry,
             jwt_issuer,
             jwt_audience,
-            60,    // confirm_code_expiry
-            false, // is_production
+            60,      // confirm_code_expiry
+            false,   // cookie_secure
+            10_000,  // rate_limit_per_second — high enough to never trigger in tests
+            100_000, // rate_limit_burst_size — high enough to never trigger in tests
             prometheus_layer,
             metric_handle,
             email_service,

@@ -1,8 +1,5 @@
 /// Pre-flight tests - Run these before starting the server
 /// These tests validate configuration, database, and core functionality
-use crate::common::*;
-
-use axum_backend::config::AppConfig;
 use axum_backend::infrastructure::database::connection::{create_pool, run_migrations};
 use axum_backend::shared::utils::jwt::JwtManager;
 use uuid::Uuid;
@@ -83,7 +80,8 @@ fn check_jwt_logic() {
         86400,
         "test-issuer".to_string(),
         "test-audience".to_string(),
-    );
+    )
+    .expect("Failed to create JwtManager");
 
     let user_id = Uuid::new_v4();
 

@@ -25,7 +25,7 @@ diesel::table! {
         role -> Varchar,
         is_active -> Bool,
         last_login -> Nullable<Timestamptz>,
-        #[max_length = 20]
+        #[max_length = 64]
         confirmation_code -> Nullable<Varchar>,
         confirmation_code_expires_at -> Nullable<Timestamptz>,
         email_verified -> Bool,

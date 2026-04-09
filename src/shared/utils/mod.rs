@@ -3,7 +3,7 @@ pub mod password;
 
 use chrono::{DateTime, Utc};
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::RngCore;
 
 /// Get current UTC timestamp
 pub fn now() -> DateTime<Utc> {
@@ -17,19 +17,12 @@ pub fn is_valid_email(email: &str) -> bool {
 
 /// Generate a cryptographically secure confirmation code.
 ///
-/// Uses `OsRng` (CSPRNG) and produces an 8-character uppercase alphanumeric
-/// string (36^8 ≈ 2.8 trillion combinations).
+/// Uses `OsRng` (CSPRNG) and produces a 32-byte hex token (64 characters,
+/// 256 bits of entropy).
 pub fn generate_confirmation_code() -> String {
-    (0..8)
-        .map(|_| {
-            let idx: u8 = OsRng.gen_range(0..36);
-            if idx < 10 {
-                (b'0' + idx) as char
-            } else {
-                (b'A' + idx - 10) as char
-            }
-        })
-        .collect()
+    let mut buf = [0u8; 32];
+    OsRng.fill_bytes(&mut buf);
+    hex::encode(buf)
 }
 
 /// Hash a token string with SHA-256 and return the hex digest.
@@ -55,10 +48,10 @@ mod tests {
     }
 
     #[test]
-    fn confirmation_code_is_8_alphanumeric_chars() {
+    fn confirmation_code_is_64_hex_chars() {
         let code = generate_confirmation_code();
-        assert_eq!(code.len(), 8);
-        assert!(code.chars().all(|c| c.is_ascii_alphanumeric()));
+        assert_eq!(code.len(), 64);
+        assert!(code.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

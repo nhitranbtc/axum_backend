@@ -22,6 +22,8 @@ pub fn create_auth_routes<R: AuthRepository + 'static>(
     resend_code_uc: Arc<crate::application::use_cases::ResendConfirmCodeUseCase<R>>,
     jwt_manager: Arc<crate::shared::utils::jwt::JwtManager>,
     cookie_config: Arc<CookieConfig>,
+    rate_limit_per_second: u64,
+    rate_limit_burst_size: u32,
 ) -> Router {
     // Public routes (no authentication required)
     let public_routes = Router::new()
@@ -47,9 +49,15 @@ pub fn create_auth_routes<R: AuthRepository + 'static>(
         .with_state(logout_uc.clone())
         .layer(middleware::from_fn_with_state(auth_state, auth_middleware));
 
-    // Combine routes — attach cookie config as extension for login handler
-    Router::new()
+    // Combine routes — attach cookie config and rate limiting
+    let router = Router::new()
         .merge(public_routes)
         .merge(protected_routes)
-        .layer(Extension(cookie_config))
+        .layer(Extension(cookie_config));
+
+    crate::presentation::middleware::rate_limit::apply_rate_limit(
+        router,
+        rate_limit_per_second,
+        rate_limit_burst_size,
+    )
 }

@@ -14,6 +14,9 @@ pub struct AppConfig {
     pub confirm_code_expiry: i64,
     pub rust_log: String,
     pub is_production: bool,
+    pub cookie_secure: bool,
+    pub rate_limit_per_second: u64,
+    pub rate_limit_burst_size: u32,
     pub db_config: DatabaseConfig,
 }
 
@@ -51,6 +54,21 @@ impl AppConfig {
             is_production: env::var("ENVIRONMENT")
                 .unwrap_or_else(|_| "development".to_string())
                 .eq_ignore_ascii_case("production"),
+            cookie_secure: env::var("COOKIE_SECURE")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or_else(|_| {
+                    env::var("ENVIRONMENT")
+                        .unwrap_or_else(|_| "development".to_string())
+                        .eq_ignore_ascii_case("production")
+                }),
+            rate_limit_per_second: env::var("RATE_LIMIT_PER_SECOND")
+                .unwrap_or_else(|_| "2".to_string())
+                .parse()
+                .unwrap_or(2),
+            rate_limit_burst_size: env::var("RATE_LIMIT_BURST_SIZE")
+                .unwrap_or_else(|_| "5".to_string())
+                .parse()
+                .unwrap_or(5),
             db_config: DatabaseConfig::from_env(),
         })
     }

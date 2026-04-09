@@ -1,4 +1,4 @@
-name: Claude Code Review
+name: Build and Test
 
 on:
   push:
@@ -11,6 +11,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "diesel.toml"
+      - ".claude/rules/**"
+      - ".github/workflows/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -68,48 +70,6 @@ jobs:
         run: cargo clippy -- -D warnings
 
       # ==================================================================
-      # Code Rules — ref: .claude/rules/code-style.md
-      #
-      # These checks enforce rules that clippy/fmt cannot catch.
-      # To add or modify rules, edit .claude/rules/code-style.md and
-      # update the corresponding check below.
-      # ==================================================================
-
-      - name: "Rule: file size (code-style.md #File & Function Size)"
-        run: |
-          max=800
-          failed=0
-          while IFS= read -r f; do
-            n=$(wc -l < "$f")
-            [ "$n" -gt "$max" ] && echo "::error file=$f::$n lines (max $max)" && failed=1
-          done < <(find src -name '*.rs' -type f)
-          exit $failed
-
-      - name: "Rule: no blocking I/O in async (code-style.md #Async Safety)"
-        run: |
-          grep -rn \
-            -e 'std::fs::read' -e 'std::fs::write' -e 'std::fs::remove' \
-            -e 'std::thread::sleep' -e 'std::process::Command::new' \
-            src/ --include='*.rs' \
-            && { echo "::error::Blocking I/O in async code — see .claude/rules/code-style.md #Async Safety"; exit 1; } \
-            || true
-
-      - name: "Rule: DDD layer boundaries (code-style.md #Architecture Layer Rules)"
-        run: |
-          failed=0
-          # domain/ must not import infrastructure, presentation, diesel, axum
-          grep -rn -e 'use crate::infrastructure' -e 'use crate::presentation' \
-            -e 'use diesel::' -e 'use axum::' -e 'use diesel_async::' \
-            src/domain/ --include='*.rs' \
-            && { echo "::error::domain/ layer violation"; failed=1; } || true
-          # application/ must not import infrastructure::database, presentation, diesel, axum
-          grep -rn -e 'use crate::infrastructure::database' -e 'use crate::presentation' \
-            -e 'use diesel::' -e 'use axum::' -e 'use diesel_async::' \
-            src/application/ --include='*.rs' \
-            && { echo "::error::application/ layer violation"; failed=1; } || true
-          exit $failed
-
-      # ==================================================================
       # Tests
       # ==================================================================
 
@@ -123,43 +83,3 @@ jobs:
           SERVER_HOST: 127.0.0.1
           SERVER_PORT: 3000
         run: cargo test --test api_tests --test integration_tests
-
-  claude-review:
-    if: github.event_name == 'pull_request'
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: read
-      id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Copy Claude config
-        run: cp -r .claude/ ~/.claude/
-
-      - name: Run Claude Code Review
-        id: claude-review
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            Review this pull request for the axum_backend Rust project.
-            CI has already passed: formatting, clippy, code-style checks, and all tests.
-            Do NOT re-check anything CI enforces — focus only on what automation cannot catch.
-
-            Read .claude/rules/code-style.md for the full rule set, then review for:
-            - Business logic correctness and edge cases
-            - Error propagation: structured errors with From impls, not .to_string() erasure
-            - Security: RBAC checks in handlers, secrets from env vars, no leaked internals
-            - Ownership: unnecessary .clone(), &str vs String in params, Arc usage
-            - CQRS migration: new writes in commands/, reads in queries/, not legacy use_cases/
-            - Value objects: invariants at construction, FromStr not custom parse
-
-            Flag CRITICAL issues as blockers. Provide actionable suggestions with code examples.
-

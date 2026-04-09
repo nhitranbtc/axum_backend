@@ -1,4 +1,4 @@
-name: Claude Code Review
+name: Build and Test
 
 on:
   push:
@@ -83,50 +83,3 @@ jobs:
           SERVER_HOST: 127.0.0.1
           SERVER_PORT: 3000
         run: cargo test --test api_tests --test integration_tests
-
-  claude-review:
-    if: github.event_name == 'pull_request'
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: read
-      id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Copy Claude config
-        run: cp -r .claude/ ~/.claude/
-
-      - name: Run Claude Code Review
-        id: claude-review
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            Review this pull request for the axum_backend Rust project.
-            CI has already passed: formatting, clippy, and all tests (unit + API + integration).
-            Do NOT re-check formatting or clippy — focus on what automation cannot catch.
-
-            Read these two files for the full rule set:
-            - .claude/rules/code-style.md — code quality, error handling, architecture, security invariants
-            - .claude/rules/commit-guidelines.md — commit format, pre-commit checklist, issue resolution process
-
-            Then review for:
-            - Business logic correctness and edge cases
-            - Error propagation: structured errors with From impls, not .to_string() erasure
-            - Security: RBAC checks in handlers, secrets from env vars, no leaked internals
-            - Ownership: unnecessary .clone(), &str vs String in params, Arc usage
-            - Async safety: no blocking I/O (std::fs, std::thread::sleep, std::process::Command) without spawn_blocking, no std::sync::Mutex in async
-            - DDD layer boundaries: domain/ must not import diesel/axum/infrastructure/presentation; application/ must not import infrastructure::database/diesel/axum/presentation
-            - File & function size: files under 800 lines, functions under 50 lines, nesting 4 levels max
-            - CQRS migration: new writes in commands/, reads in queries/, not legacy use_cases/
-            - Value objects: invariants at construction, FromStr not custom parse
-            - Commit hygiene: conventional commits format, issue references, one concern per commit
-
-            Flag CRITICAL issues as blockers. Provide actionable suggestions with code examples.

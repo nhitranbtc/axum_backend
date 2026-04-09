@@ -272,7 +272,7 @@ async fn test_forgot_password_flow() {
 
     // Get the confirmation code (simulating email retrieval)
     let code = server.get_confirmation_code(&email).await;
-    assert_eq!(code.len(), 8);
+    assert_eq!(code.len(), 64);
 
     // Step 3: Call Set Password
     let set_pass_res = server
@@ -352,7 +352,7 @@ async fn test_resend_code_flow() {
 
     // Get the NEW code
     let code = server.get_confirmation_code(&email).await;
-    assert_eq!(code.len(), 8);
+    assert_eq!(code.len(), 64);
 
     // Step 3: Call Verify
     let verify_res = server
@@ -400,7 +400,7 @@ async fn test_full_auth_flow() {
 
     // 2. Get Code
     let code = server.get_confirmation_code(&email).await;
-    assert_eq!(code.len(), 8);
+    assert_eq!(code.len(), 64);
 
     // 3. Verify Code
     let res = server

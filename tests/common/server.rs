@@ -133,7 +133,9 @@ impl TestServer {
 
         // 6. Spawn Server Background Task
         tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("Test server failed");
+            axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+                .await
+                .expect("Test server failed");
         });
 
         // 7. Wait for readiness
